@@ -1,0 +1,187 @@
+{
+  "test_accuracy": 0.9896,
+  "test_loss": 0.0176,
+  "n_test": 96,
+  "n_train": 448,
+  "n_val": 96,
+  "epochs": 12,
+  "split": [
+    0.7,
+    0.15,
+    0.15
+  ],
+  "per_class": [
+    {
+      "class": "OFFICIAL_DOCUMENT",
+      "n": 15,
+      "accuracy": 1.0
+    },
+    {
+      "class": "NEWS_SCREENSHOT",
+      "n": 11,
+      "accuracy": 1.0
+    },
+    {
+      "class": "SOCIAL_MEDIA",
+      "n": 9,
+      "accuracy": 1.0
+    },
+    {
+      "class": "MEME",
+      "n": 11,
+      "accuracy": 1.0
+    },
+    {
+      "class": "INFOGRAPHIC",
+      "n": 13,
+      "accuracy": 1.0
+    },
+    {
+      "class": "ANIMAL_HEALTH_CONTENT",
+      "n": 12,
+      "accuracy": 1.0
+    },
+    {
+      "class": "PHOTOGRAPH",
+      "n": 14,
+      "accuracy": 1.0
+    },
+    {
+      "class": "POTENTIALLY_MANIPULATED",
+      "n": 11,
+      "accuracy": 0.9091
+    }
+  ],
+  "samples": [
+    {
+      "id": "official_document_unseen_0.png",
+      "class": "OFFICIAL_DOCUMENT",
+      "split": "test"
+    },
+    {
+      "id": "official_document_unseen_1.png",
+      "class": "OFFICIAL_DOCUMENT",
+      "split": "test"
+    },
+    {
+      "id": "news_screenshot_unseen_0.png",
+      "class": "NEWS_SCREENSHOT",
+      "split": "test"
+    },
+    {
+      "id": "news_screenshot_unseen_1.png",
+      "class": "NEWS_SCREENSHOT",
+      "split": "test"
+    },
+    {
+      "id": "social_media_unseen_0.png",
+      "class": "SOCIAL_MEDIA",
+      "split": "test"
+    },
+    {
+      "id": "social_media_unseen_1.png",
+      "class": "SOCIAL_MEDIA",
+      "split": "test"
+    },
+    {
+      "id": "meme_unseen_0.png",
+      "class": "MEME",
+      "split": "test"
+    },
+    {
+      "id": "meme_unseen_1.png",
+      "class": "MEME",
+      "split": "test"
+    },
+    {
+      "id": "infographic_unseen_0.png",
+      "class": "INFOGRAPHIC",
+      "split": "test"
+    },
+    {
+      "id": "infographic_unseen_1.png",
+      "class": "INFOGRAPHIC",
+      "split": "test"
+    },
+    {
+      "id": "animal_health_content_unseen_0.png",
+      "class": "ANIMAL_HEALTH_CONTENT",
+      "split": "test"
+    },
+    {
+      "id": "animal_health_content_unseen_1.png",
+      "class": "ANIMAL_HEALTH_CONTENT",
+      "split": "test"
+    },
+    {
+      "id": "photograph_unseen_0.png",
+      "class": "PHOTOGRAPH",
+      "split": "test"
+    },
+    {
+      "id": "photograph_unseen_1.png",
+      "class": "PHOTOGRAPH",
+      "split": "test"
+    },
+    {
+      "id": "potentially_manipulated_unseen_0.png",
+      "class": "POTENTIALLY_MANIPULATED",
+      "split": "test"
+    },
+    {
+      "id": "potentially_manipulated_unseen_1.png",
+      "class": "POTENTIALLY_MANIPULATED",
+      "split": "test"
+    }
+  ],
+  "architecture": [
+    {
+      "layer": "Input",
+      "shape": "64\u00d764\u00d73"
+    },
+    {
+      "layer": "Conv2D",
+      "filters": 32,
+      "kernel": "3\u00d73",
+      "activation": "ReLU"
+    },
+    {
+      "layer": "MaxPool2D",
+      "pool": "2\u00d72"
+    },
+    {
+      "layer": "Conv2D",
+      "filters": 64,
+      "kernel": "3\u00d73",
+      "activation": "ReLU"
+    },
+    {
+      "layer": "MaxPool2D",
+      "pool": "2\u00d72"
+    },
+    {
+      "layer": "Conv2D",
+      "filters": 64,
+      "kernel": "3\u00d73",
+      "activation": "ReLU"
+    },
+    {
+      "layer": "Flatten",
+      "units": 16384
+    },
+    {
+      "layer": "Dense",
+      "units": 64,
+      "activation": "ReLU"
+    },
+    {
+      "layer": "Dense",
+      "units": 8,
+      "activation": "softmax"
+    }
+  ],
+  "model_version": "cnn32_64_64_dense64_v1",
+  "experimental_on_synthetic": true,
+  "production_metric": false,
+  "note": "CNN académica experimental sobre dibujos sintéticos. Esta exactitud (0.9896) NO es métrica de producción ni generaliza a fotos de prensa."
+}

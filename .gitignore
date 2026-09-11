@@ -1,0 +1,58 @@
+# Secrets and local env — never commit
+.env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!**/.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.egg-info/
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.next/
+dist/
+
+# Runtime data / dumps (recreated locally)
+data/volumes/
+data/backups/
+data/cache/
+data/cnn_synth/
+data/processed/*.db
+data/processed/*.db-*
+data/processed/*.json
+data/raw/*
+!data/raw/.gitkeep
+
+# SQLite anywhere
+*.sqlite
+*.db
+*.db-wal
+*.db-shm
+
+# Media / training dumps
+storage/images/*
+!storage/images/.gitkeep
+models/cnn/dataset/**/*.jpg
+models/cnn/dataset/**/*.jpeg
+models/cnn/dataset/**/*.png
+models/cnn/dataset/**/*.webp
+models/cnn/dataset/**/*.bmp
+!models/cnn/dataset/**/.gitkeep
+
+# Logs / OS / zip copies
+*.log
+logs/
+.DS_Store
+Thumbs.db
+*.zip
+mac.zip

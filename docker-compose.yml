@@ -1,0 +1,84 @@
+# FASE 1 — infraestructura local opcional.
+# Proyecto vigente:
+#   C:\Users\javie\OneDrive\Escritorio\Generador_Excel_Enfermedades
+# UI: salida\urls_enfermedades_dashboard.html
+# Esta carpeta: C:\Users\javie\OneDrive\Escritorio\the-newsbreakers-framework
+# No sustituye el Generador. El verificador FastAPI+Next.js ya no es la fuente.
+#
+# Arranque MySQL (warehouse de minería) + DBs opcionales:
+#   docker compose up -d mysql
+#   docker compose up -d
+#
+# Gateway FastAPI (opcional, puerto 8010):
+#   docker compose --profile gateway up -d
+#
+# Credenciales de desarrollo — no usar en producción.
+# MySQL data vive en volumen Docker (no OneDrive).
+
+services:
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_DATABASE: newsbreakers
+      MYSQL_USER: tnb
+      MYSQL_PASSWORD: tnb
+      MYSQL_ROOT_PASSWORD: tnbroot
+    ports:
+      - "${MYSQL_PUBLISH_PORT:-3306}:3306"
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - tnb_mysql:/var/lib/mysql
+      - ./database/mysql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-utnb", "-ptnb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: tnb
+      POSTGRES_PASSWORD: tnb
+      POSTGRES_DB: tnb
+    ports:
+      - "5432:5432"
+    volumes:
+      - tnb_pg:/var/lib/postgresql/data
+      - ./database/postgres/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - tnb_mongo:/data/db
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  gateway:
+    profiles: ["gateway"]
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment:
+      POSTGRES_URL: postgresql://tnb:tnb@postgres:5432/tnb
+      MONGO_URL: mongodb://mongo:27017
+      MONGO_DB: tnb_raw
+      REDIS_URL: redis://redis:6379/0
+      LEGACY_API_URL: http://host.docker.internal:8000
+    ports:
+      - "8010:8010"
+    depends_on:
+      - postgres
+      - mongo
+      - redis
+
+volumes:
+  tnb_mysql:
+  tnb_pg:
+  tnb_mongo:

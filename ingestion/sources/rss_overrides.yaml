@@ -1,0 +1,171 @@
+# RSS conocidos + extras para el MVP (API → RSS → scrape deferred).
+# Se fusionan sobre catalog.yaml al cargar. No scrapeamos todo Internet.
+# Solo feeds reales (oficiales / veterinarios / ciencia). SENASICA gob.mx
+# no publica RSS estable: sigue scrape deferred.
+
+rss_by_domain:
+  who.int: https://www.who.int/rss-feeds/news-english.xml
+  woah.org: https://www.woah.org/en/rss/
+  cdc.gov: https://tools.cdc.gov/api/v2/resources/media/403372.rss
+  fao.org: https://www.fao.org/newsroom/rss/en
+  paho.org: https://www.paho.org/en/rss.xml
+  elpais.com: https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/portada
+  efe.com: https://www.efe.com/efe/espana/rss
+  aljazeera.com: https://www.aljazeera.com/xml/rss/all.xml
+  nature.com: https://www.nature.com/nature.rss
+  allaboutfeed.net: https://www.allaboutfeed.net/rss/
+  poultryworld.net: https://www.poultryworld.net/rss/
+  thepoultrysite.com: https://thepoultrysite.com/rss/
+  usda.gov: https://www.usda.gov/rss/latest-releases.xml
+  reuters.com: https://www.reutersagency.com/feed/?best-topics=health&post_type=best
+  bbc.co.uk: https://feeds.bbci.co.uk/news/health/rss.xml
+  cidrap.umn.edu: https://www.cidrap.umn.edu/rss.xml
+  sciencedaily.com: https://www.sciencedaily.com/rss/plants_animals/veterinary_medicine.xml
+  ecdc.europa.eu: https://www.ecdc.europa.eu/en/rss.xml
+  sciencemediacentre.org: https://www.sciencemediacentre.org/feed/
+
+extra_sources:
+  - source_id: SRC-CIDRAP
+    name: CIDRAP
+    domain: cidrap.umn.edu
+    country: US
+    language: en
+    type: RESEARCH
+    category: research
+    priority: high
+    access_method: rss
+    rss_url: https://www.cidrap.umn.edu/rss.xml
+    base_url: https://www.cidrap.umn.edu
+    parser_version: parser_v1
+    frequency_minutes: 30
+    confidence: 85
+    active: true
+    diseases: [gripe_aviar, fiebre_porcina_clasica]
+  - source_id: SRC-WHO-DON
+    name: WHO Disease Outbreak News
+    domain: who.int
+    country: INT
+    language: en
+    type: OFFICIAL_INTERNATIONAL
+    category: official
+    priority: high
+    access_method: rss
+    rss_url: https://www.who.int/feeds/entity/csr/don/en/rss.xml
+    base_url: https://www.who.int/emergencies/disease-outbreak-news
+    parser_version: parser_v1
+    frequency_minutes: 60
+    confidence: 90
+    active: true
+    diseases: [gripe_aviar]
+  - source_id: SRC-FAO-NEWS
+    name: FAO Newsroom
+    domain: fao.org
+    country: INT
+    language: en
+    type: OFFICIAL_INTERNATIONAL
+    category: official
+    priority: high
+    access_method: rss
+    rss_url: https://www.fao.org/newsroom/rss/en
+    base_url: https://www.fao.org/newsroom/en
+    parser_version: parser_v1
+    frequency_minutes: 60
+    confidence: 85
+    active: true
+    diseases: [gripe_aviar, gusano_barrenador, fiebre_porcina_clasica]
+  - source_id: SRC-ECDC
+    name: ECDC
+    domain: ecdc.europa.eu
+    country: EU
+    language: en
+    type: OFFICIAL_INTERNATIONAL
+    category: official
+    priority: high
+    access_method: rss
+    rss_url: https://www.ecdc.europa.eu/en/rss.xml
+    base_url: https://www.ecdc.europa.eu
+    parser_version: parser_v1
+    frequency_minutes: 60
+    confidence: 80
+    active: true
+    diseases: [gripe_aviar]
+  - source_id: SRC-CDC-FLU
+    name: CDC Flu RSS
+    domain: cdc.gov
+    country: US
+    language: en
+    type: OFFICIAL
+    category: official
+    priority: high
+    access_method: rss
+    rss_url: https://tools.cdc.gov/api/v2/resources/media/403372.rss
+    base_url: https://www.cdc.gov/bird-flu/index.html
+    parser_version: parser_v1
+    frequency_minutes: 60
+    confidence: 85
+    active: true
+    diseases: [gripe_aviar]
+  - source_id: SRC-POULTRYWORLD
+    name: Poultry World
+    domain: poultryworld.net
+    country: NL
+    language: en
+    type: VETERINARY_MEDIA
+    category: veterinary
+    priority: high
+    access_method: rss
+    rss_url: https://www.poultryworld.net/rss/
+    base_url: https://www.poultryworld.net
+    parser_version: parser_v1
+    frequency_minutes: 60
+    confidence: 70
+    active: true
+    diseases: [gripe_aviar]
+  - source_id: SRC-POULTRYSITE
+    name: The Poultry Site
+    domain: thepoultrysite.com
+    country: GB
+    language: en
+    type: VETERINARY_MEDIA
+    category: veterinary
+    priority: high
+    access_method: rss
+    rss_url: https://thepoultrysite.com/rss/
+    base_url: https://thepoultrysite.com
+    parser_version: parser_v1
+    frequency_minutes: 60
+    confidence: 70
+    active: true
+    diseases: [gripe_aviar]
+  - source_id: SRC-ALLABOUTFEED
+    name: All About Feed
+    domain: allaboutfeed.net
+    country: NL
+    language: en
+    type: VETERINARY_MEDIA
+    category: veterinary
+    priority: high
+    access_method: rss
+    rss_url: https://www.allaboutfeed.net/rss/
+    base_url: https://www.allaboutfeed.net
+    parser_version: parser_v1
+    frequency_minutes: 60
+    confidence: 70
+    active: true
+    diseases: [gripe_aviar, fiebre_porcina_clasica]
+  - source_id: SRC-SCIENCE-DAILY-VET
+    name: ScienceDaily Veterinary
+    domain: sciencedaily.com
+    country: US
+    language: en
+    type: RESEARCH
+    category: research
+    priority: normal
+    access_method: rss
+    rss_url: https://www.sciencedaily.com/rss/plants_animals/veterinary_medicine.xml
+    base_url: https://www.sciencedaily.com
+    parser_version: parser_v1
+    frequency_minutes: 120
+    confidence: 65
+    active: true
+    diseases: [gripe_aviar]

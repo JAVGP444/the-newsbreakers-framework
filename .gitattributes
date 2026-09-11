@@ -1,0 +1,3 @@
+* text=auto
+*.command text eol=lf
+mac/*.md text eol=lf

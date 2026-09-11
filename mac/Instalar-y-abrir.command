@@ -1,0 +1,132 @@
+#!/bin/bash
+# The NewsBreakers — instala dependencias y abre el observatorio (macOS).
+#
+# Doble clic en Finder, o desde Terminal:
+#   chmod +x Instalar-y-abrir.command
+#   ./Instalar-y-abrir.command
+#
+# Windows / Git en Windows no suelen marcar el bit +x.
+# En el Mac, si Finder no lo abre:
+#   chmod +x mac/Instalar-y-abrir.command mac/detener.command
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT"
+
+API_PORT=8010
+WEB_PORT=5173
+API_URL="http://127.0.0.1:${API_PORT}"
+WEB_URL="http://127.0.0.1:${WEB_PORT}/#/"
+LOG_DIR="$ROOT/logs"
+API_LOG="$LOG_DIR/mac-api.log"
+WEB_LOG="$LOG_DIR/mac-web.log"
+
+mkdir -p "$LOG_DIR"
+
+echo "=== The NewsBreakers — observatorio (Mac) ==="
+echo "Repo: $ROOT"
+echo ""
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "No se encontró python3."
+  echo "Instálalo con Homebrew:"
+  echo "  brew install python"
+  echo "Si no tienes brew: https://brew.sh"
+  exit 1
+fi
+
+if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+  echo "No se encontró Node.js / npm."
+  echo "Instálalos con Homebrew:"
+  echo "  brew install node"
+  echo "Si no tienes brew: https://brew.sh"
+  exit 1
+fi
+
+echo "python3: $(python3 --version 2>&1)"
+echo "node:    $(node --version)   npm: $(npm --version)"
+echo ""
+
+# Un .venv copiado desde Windows no sirve en macOS (falta bin/python).
+if [ ! -x "$ROOT/.venv/bin/python" ]; then
+  echo "Creando entorno virtual (.venv)..."
+  if [ -d "$ROOT/.venv" ]; then
+    echo "El .venv existente no es de macOS; se recrea."
+    rm -rf "$ROOT/.venv"
+  fi
+  python3 -m venv "$ROOT/.venv"
+fi
+
+# shellcheck disable=SC1091
+source "$ROOT/.venv/bin/activate"
+echo "Instalando dependencias Python..."
+python -m pip install -r "$ROOT/requirements.txt"
+
+echo "Instalando dependencias del dashboard..."
+(
+  cd "$ROOT/frontend"
+  npm install
+)
+
+if [ -z "${TNB_DEMO_ROOT:-}" ]; then
+  if [ -d "$ROOT/../Generador_Excel_Enfermedades" ]; then
+    export TNB_DEMO_ROOT="$(cd "$ROOT/../Generador_Excel_Enfermedades" && pwd)"
+  elif [ -d "$HOME/Desktop/Generador_Excel_Enfermedades" ]; then
+    export TNB_DEMO_ROOT="$HOME/Desktop/Generador_Excel_Enfermedades"
+  fi
+fi
+
+if [ -n "${TNB_DEMO_ROOT:-}" ]; then
+  echo "TNB_DEMO_ROOT=$TNB_DEMO_ROOT"
+else
+  echo "Aviso: no se encontró Generador_Excel_Enfermedades."
+  echo "  Buscado: $ROOT/../Generador_Excel_Enfermedades"
+  echo "           $HOME/Desktop/Generador_Excel_Enfermedades"
+  echo "  El dashboard abre igual (keywords de respaldo)."
+fi
+echo ""
+
+port_listening() {
+  lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+if port_listening "$API_PORT"; then
+  echo "API ya escucha en $API_URL"
+else
+  echo "Iniciando API en $API_URL ..."
+  echo "----- $(date '+%Y-%m-%d %H:%M:%S') uvicorn -----" >> "$API_LOG"
+  nohup python -m uvicorn api.main:app --host 127.0.0.1 --port "$API_PORT" \
+    >> "$API_LOG" 2>&1 &
+  disown || true
+fi
+
+if port_listening "$WEB_PORT"; then
+  echo "Dashboard ya escucha en $WEB_URL"
+else
+  echo "Iniciando dashboard en $WEB_URL ..."
+  echo "----- $(date '+%Y-%m-%d %H:%M:%S') vite -----" >> "$WEB_LOG"
+  nohup npm --prefix "$ROOT/frontend" run dev -- --host 127.0.0.1 --port "$WEB_PORT" \
+    >> "$WEB_LOG" 2>&1 &
+  disown || true
+fi
+
+echo ""
+echo "Docker / MySQL no hace falta para abrir el observatorio (usa SQLite)."
+echo "Opcional, warehouse MySQL desde la raíz del repo:"
+echo "  cd \"$ROOT\" && docker compose up -d mysql"
+echo ""
+
+sleep 4
+open "$WEB_URL"
+
+echo "Observatorio: $WEB_URL"
+echo "API:          $API_URL"
+echo "Docs API:     ${API_URL}/docs"
+echo "Logs:         $API_LOG"
+echo "              $WEB_LOG"
+echo ""
+echo "Puedes cerrar esta ventana. Los servicios siguen en segundo plano."
+echo "Para parar: doble clic en detener.command"
+echo ""
