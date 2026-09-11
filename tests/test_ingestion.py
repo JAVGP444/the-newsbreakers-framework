@@ -112,6 +112,81 @@ def test_relevance_skip_threshold():
     assert should_skip("receta de pasta carbonara con albahaca y tomate")
     assert relevance_score("receta de pasta") < 0.15
     assert not should_skip("brote de gripe aviar H5N1 en aves de corral")
+    official = {
+        "type": "OFFICIAL",
+        "category": "official",
+        "diseases": ["gripe_aviar"],
+        "domain": "woah.org",
+    }
+    assert not should_skip("WOAH weekly animal health update for poultry farms", source=official)
+    long_pasta = "receta de pasta carbonara con albahaca y tomate " * 6
+    assert should_skip(long_pasta, source=official)
+
+
+def test_bundled_diseases_and_watchlist_without_generador():
+    from bootstrap import DISEASES_YAML, FRAMEWORK_ROOT, WATCHLIST_YAML
+    from relevance import TOPIC_KEYWORDS
+    from source_catalog import load_catalog
+
+    assert (FRAMEWORK_ROOT / "config" / "diseases.yaml").is_file()
+    assert WATCHLIST_YAML.is_file()
+    assert DISEASES_YAML.is_file()
+    lowered = [k.lower() for k in TOPIC_KEYWORDS]
+    assert "screwworm" in lowered
+    ids = {s["source_id"] for s in load_catalog()}
+    assert "SRC-PIGSITE" in ids
+    assert "SRC109" in ids
+
+
+def test_sources_due_force_ignores_next_check():
+    from datetime import datetime, timedelta, timezone
+
+    from source_catalog import sources_due
+
+    now = datetime.now(timezone.utc)
+    source = {
+        "source_id": "SRC-FORCE",
+        "priority": "critical",
+        "active": True,
+        "rss_url": "https://example.org/rss",
+        "access_method": "rss",
+        "next_check": (now + timedelta(hours=2)).isoformat(),
+    }
+    assert sources_due([source], now=now, methods=("rss",), force=False) == []
+    forced = sources_due([source], now=now, methods=("rss",), force=True)
+    assert len(forced) == 1
+
+
+def test_gdelt_windows_shift_with_offset():
+    from datetime import datetime, timezone
+
+    from api_fetcher import gdelt_query_windows
+
+    now = datetime(2026, 9, 11, 12, 0, tzinfo=timezone.utc)
+    first = gdelt_query_windows(now=now, offset_days=0, lookback_days=21, windows=2, window_hours=24)
+    later = gdelt_query_windows(now=now, offset_days=4, lookback_days=21, windows=2, window_hours=24)
+    assert len(first) == 2
+    assert first[0][1] > later[0][1]
+
+
+def test_parse_rss_keeps_more_than_first_ten():
+    items_xml = "".join(
+        f"<item><title>H5N1 item {i}</title><link>https://www.woah.org/n/{i}</link></item>"
+        for i in range(15)
+    )
+    xml = f'<?xml version="1.0"?><rss version="2.0"><channel>{items_xml}</channel></rss>'
+    items = parse_rss(xml, "SRC002", limit=15)
+    assert len(items) == 15
+
+
+def test_atom_next_link_detected():
+    from rss_fetcher import _next_feed_url
+
+    xml = """<?xml version="1.0"?>
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <link rel="next" href="https://example.org/rss?page=2"/>
+    </feed>"""
+    assert _next_feed_url(xml).endswith("page=2")
 
 
 def test_image_average_hash_stable(tmp_path):

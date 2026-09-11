@@ -1,63 +1,84 @@
-# Igualar el observatorio de Windows en el Mac
+# Igualar el observatorio de Windows en el Mac (~160 y seguir creciendo)
 
-GitHub **no** incluye `data/processed/tnb.db` (está en `.gitignore`). El clone del Mac arranca con SQLite vacío. En Windows el observatorio lee esa base local (~160 artículos), no MySQL.
+`data/processed/tnb.db` (~1.3 MB, sin API keys) **sí va en git**. Un `git pull` trae el corpus de Windows (~160 notas: 108 del Generador Excel, YouTube, redes y un poco de RSS).
 
-Un ciclo RSS/GDELT **no** reproduce esos 160: la mayoría son corpus importado desde `Generador_Excel_Enfermedades` (YouTube, redes, documentos), no noticias minadas esa misma tarde.
+Las miniaturas (`storage/images`, ~12 MB) también se versionan. No se sube `data/cnn_synth`.
 
-Tamaño típico de `tnb.db`: **~1.3 MB**. No lleva API keys. Las miniaturas viven en `storage/images` (~20 MB); si no las copias, las fichas abren igual (sin foto o con placeholder).
+## A) Esta noche: `git pull` (incluye ~160)
 
-## Esta noche (USB / AirDrop / OneDrive)
-
-En **Windows**, con la API y el minero parados un momento:
-
-1. Copia este archivo al Mac (mismo sitio relativo dentro del repo):
-
-   `the-newsbreakers-framework\data\processed\tnb.db`
-
-2. Opcional, para fotos:
-
-   `the-newsbreakers-framework\storage\images\`
-
-3. En el Mac, cierra el observatorio (`mac/detener.command`) **antes** de sustituir `tnb.db`.
-4. Deja `tnb.db` en:
-
-   `~/the-newsbreakers-framework/data/processed/tnb.db`
-
-   (o la ruta donde clonaste el repo).
-5. Vuelve a abrir con `mac/Instalar-y-abrir.command`.
-6. Recarga http://127.0.0.1:5173/#/ — el KPI debe acercarse a los **160** de Windows, no a ~26.
-
-PowerShell en Windows (copia a un USB `E:\tnb-datos`):
-
-```powershell
-$src = "$env:USERPROFILE\OneDrive\Escritorio\the-newsbreakers-framework"
-New-Item -ItemType Directory -Force -Path E:\tnb-datos\data\processed, E:\tnb-datos\storage\images | Out-Null
-Copy-Item "$src\data\processed\tnb.db" E:\tnb-datos\data\processed\
-Copy-Item "$src\storage\images\*" E:\tnb-datos\storage\images\ -Recurse -ErrorAction SilentlyContinue
-```
-
-En el Mac, desde la raíz del clone:
+En el **Mac**, para la API/minero y actualiza:
 
 ```bash
-mkdir -p data/processed storage/images
-cp /Volumes/USB/tnb-datos/data/processed/tnb.db data/processed/
-cp -R /Volumes/USB/tnb-datos/storage/images/. storage/images/
+cd ~/the-newsbreakers-framework   # o la ruta donde clonaste
+chmod +x mac/*.command
+./mac/detener.command
+git pull
+./mac/Instalar-y-abrir.command
 ```
 
-AirDrop: envía solo `tnb.db` (1.3 MB) y colócalo en `data/processed/`.
+Recarga **http://127.0.0.1:5173/#/** — el KPI debe acercarse a **~160**, no a ~26.
 
-**No** hace falta Docker ni MySQL en el Mac para ver esas notas. Si más tarde levantas MySQL vacío, el dual-write **no** sustituye un SQLite ya lleno: la UI sigue leyendo SQLite.
+Si el pull dice que `tnb.db` conflictúa (cambios locales):
 
-## Si no puedes copiar la base
+```bash
+./mac/detener.command
+git checkout -- data/processed/tnb.db
+git pull
+./mac/Instalar-y-abrir.command
+```
 
-1. `git pull` de este repo (límites de fetch más altos que el tope viejo de 8–12).
-2. Doble clic en `mac/minar.command` (o `python mine_loop.py`).
-3. Espera **varias horas**. El sleep/hibernación del Mac **pausa** la minería.
-4. Un solo `python run_cycle.py` o el botón «Ejecutar ciclo» **no** llega a 150. Sin la carpeta `Generador_Excel_Enfermedades` tampoco se importan los ~108 documentos de corpus.
+## B) Seguir creciendo: `mac/minar-ya.command`
 
-Opcional: copia también `Generador_Excel_Enfermedades` junto al repo (o a `~/Desktop/Generador_Excel_Enfermedades`) para que el siguiente ciclo importe YouTube/social/corpus.
+El botón «Ejecutar ciclo» o un solo RSS **no** añade las mismas 26 URLs otra vez (salen como duplicado). Para ver el contador subir **en una sentada**:
 
-## Qué no hacer
+```bash
+./mac/minar-ya.command
+```
 
-- No subas `.env` ni secretos.
-- No hace falta meter `tnb.db` en git-lfs para esta talla; el USB/AirDrop es más simple y no deja una foto obsoleta en GitHub.
+Eso corre **8 ciclos seguidos** (`TNB_FAST=0`, `TNB_DEMO_SEED=0`, toda la watchlist, sin tope de 8 fuentes). En Terminal verás por qué no sube: `duplicados`, `irrelevantes`, `error fetch`. GDELT usa ventanas de fechas distintas en cada ciclo.
+
+Minería continua (duerme ~30 min entre ciclos, logs en primer plano):
+
+```bash
+./mac/minar.command
+```
+
+No hace falta la carpeta `Generador_Excel_Enfermedades`. La watchlist está en `ingestion/sources/catalog.yaml` + `config/watchlist.yaml`. Keywords en `config/diseases.yaml`.
+
+## C) Deja el Mac despierto
+
+El **sleep / hibernación pausa el minero**. En Sistema → Batería, evita que se duerma mientras corre `minar.command` o `minar-ya.command`.
+
+## D) Recargar la UI
+
+Tras minar: recarga **http://127.0.0.1:5173/#/** o vuelve a abrir `Instalar-y-abrir.command`. La UI lee SQLite local, no MySQL.
+
+## Plan B: AirDrop / USB (si git pull de la base falla)
+
+En **Windows**:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\paquete-mac.ps1
+```
+
+Eso deja `~/Desktop/tnb-datos-mac.zip`. En el Mac, con el observatorio parado:
+
+```bash
+cd ~/the-newsbreakers-framework
+mkdir -p data/processed storage/images
+unzip ~/Downloads/tnb-datos-mac.zip
+# o copia a mano data/processed/tnb.db
+./mac/Instalar-y-abrir.command
+```
+
+## Qué sigue necesitando claves (no viene en git)
+
+| Fuente | ¿En el snapshot de 160? | ¿Crece en el Mac sin claves? |
+|--------|-------------------------|------------------------------|
+| Corpus Excel / documentos | Sí (~108) | No (hace falta `Generador_Excel_Enfermedades`) |
+| YouTube | Sí (~21 ya importados) | **No** — hace falta API key de YouTube en el Generador |
+| Redes (Twitter, etc.) | Sí (~16 ya importados) | **No** — claves de redes en el Generador |
+| RSS watchlist + GDELT | Pocas en el snapshot | **Sí** — `minar-ya.command` (GDELT no pide key) |
+| LLM (OpenAI/Anthropic) | No hace falta para contar notas | Opcional, no decide la verdad |
+
+**No** subas `.env` ni secretos. Docker / MySQL no hacen falta para ver las ~160 notas.

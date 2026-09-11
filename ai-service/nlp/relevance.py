@@ -1,7 +1,9 @@
 """Relevancia de salud animal — embudo nivel 2.
 
-Keywords desde Generador: diseases.yaml + enfermedades_config.yaml.
-Score 0–1; por debajo de 0.15 se descarta (no sube de nivel).
+Keywords desde Generador (si existe) o `config/diseases.yaml` bundled.
+Score 0–1; por debajo de 0.15 se descarta en medios generales.
+Fuentes de la watchlist (oficial / veterinaria / investigación) se conservan
+si hay una señal débil de sanidad animal — no hace falta TNB_DEMO_ROOT.
 """
 from __future__ import annotations
 
@@ -22,9 +24,45 @@ RELEVANCE_THRESHOLD = 0.15
 
 FALLBACK_KEYWORDS = (
     "gusano barrenador", "gripe aviar", "peste porcina", "influenza aviar",
-    "h5n1", "cochliomyia", "screwworm", "senasica", "woah", "wahis",
-    "zoonosis", "outbreak", "brote", "myiasis", "hog cholera",
-    "avian influenza", "classical swine fever", "hpai", "animal health",
+    "h5n1", "h5n2", "h5n6", "h7n9", "cochliomyia", "screwworm", "senasica",
+    "woah", "wahis", "oie", "zoonosis", "outbreak", "brote", "myiasis",
+    "hog cholera", "avian influenza", "classical swine fever", "hpai",
+    "lpai", "animal health", "salud animal", "poultry", "livestock",
+    "veterinary", "aves de corral", "bioseguridad", "epizoot",
+    "new world screwworm", "bird flu", "swine fever", "foot and mouth",
+    "aftosa", "rabia", "brucelosis", "tuberculosis bovina",
+)
+
+# Tipos/categorías de la watchlist que ya son sanidad animal.
+WATCHLIST_KEEP_TYPES = {
+    "official",
+    "official_international",
+    "veterinary_media",
+    "veterinary",
+    "research",
+    "epidemiological",
+    "genomic",
+    "surveillance",
+    "aggregator",
+}
+WATCHLIST_KEEP_CATEGORIES = {
+    "official",
+    "veterinary",
+    "surveillance",
+    "research",
+    "epidemiological",
+}
+
+WEAK_ANIMAL_HEALTH = (
+    "animal", "livestock", "poultry", "veterinary", "zoonos", "outbreak",
+    "brote", "ganado", "aves", "farm", "influenza", "disease", "salud animal",
+    "woah", "oie", "senasica", "fao", "wahis", "epizoot", "herd", "flock",
+    "swine", "avian", "cattle", "pig", "bird flu", "vaccine", "vacuna",
+    "cuarentena", "sanidad", "zoosanit", "h5n", "hpai", "screwworm",
+    "barrenador", "porcino", "bovino", "ovino", "caprino", "equino",
+    "pollo", "gallina", "pavo", "cerdo", "bioseguridad", "depopul",
+    "sacrificio", "miasis", "myiasis", "pest", "peste", "corral",
+    "aphis", "usda", "cidrap", "wahid",
 )
 
 
@@ -52,6 +90,10 @@ def _load_keywords() -> tuple[list[str], dict[str, str]]:
                     _add_kw(words, disease_map, species)
             for variant in (data.get("senasica") or {}).get("variants") or []:
                 _add_kw(words, disease_map, variant)
+            for bucket in (data.get("symptoms") or {}).values():
+                if isinstance(bucket, list):
+                    for kw in bucket:
+                        _add_kw(words, disease_map, kw)
         except Exception:
             pass
     if ENFERMEDADES_CONFIG.exists():
@@ -64,7 +106,6 @@ def _load_keywords() -> tuple[list[str], dict[str, str]]:
                     _add_kw(words, disease_map, kw, str(did))
         except Exception:
             pass
-    # de-dup preserving order
     seen: set[str] = set()
     unique: list[str] = []
     for w in words:
@@ -73,6 +114,11 @@ def _load_keywords() -> tuple[list[str], dict[str, str]]:
             unique.append(w)
     if not unique:
         unique = list(FALLBACK_KEYWORDS)
+    else:
+        for extra in FALLBACK_KEYWORDS:
+            if extra not in seen:
+                unique.append(extra)
+                seen.add(extra)
     return unique, disease_map
 
 
@@ -96,15 +142,51 @@ def matched_diseases(text: str) -> list[str]:
     return sorted(found)
 
 
-def should_skip(text: str, threshold: float = RELEVANCE_THRESHOLD) -> bool:
-    return relevance_score(text) < threshold
+def _is_watchlist_animal_health(source: dict[str, Any] | None) -> bool:
+    if not source:
+        return False
+    typ = str(source.get("type") or "").lower().replace(" ", "_")
+    cat = str(source.get("category") or "").lower()
+    if typ in WATCHLIST_KEEP_TYPES or cat in WATCHLIST_KEEP_CATEGORIES:
+        return True
+    if source.get("diseases"):
+        return True
+    domain = str(source.get("domain") or "").lower()
+    if any(d in domain for d in ("woah.org", "fao.org", "who.int", "aphis.", "senasica", "cidrap", "poultry", "pigsite")):
+        return True
+    return False
 
 
-def should_analyze(text: str) -> str:
-    """discard | low | analyze | high — embudo, no veredicto de verdad."""
+def _has_weak_animal_health(text: str) -> bool:
+    t = (text or "").lower()
+    return any(tok in t for tok in WEAK_ANIMAL_HEALTH)
+
+
+def should_skip(
+    text: str,
+    threshold: float = RELEVANCE_THRESHOLD,
+    source: dict[str, Any] | None = None,
+) -> bool:
     score = relevance_score(text)
-    if score < RELEVANCE_THRESHOLD:
+    if score >= threshold:
+        return False
+    if _is_watchlist_animal_health(source):
+        if score > 0 or _has_weak_animal_health(text) or source.get("diseases"):
+            # Medios oficiales/vet de la watchlist: conservar RSS de sanidad animal
+            # aunque el summary sea corto o falten tags del Generador.
+            if score > 0 or _has_weak_animal_health(text):
+                return False
+            # Fuente con enfermedades asignadas + texto vacío/corto: no tirar el ítem
+            if len((text or "").strip()) < 80:
+                return False
+    return True
+
+
+def should_analyze(text: str, source: dict[str, Any] | None = None) -> str:
+    """discard | low | analyze | high — embudo, no veredicto de verdad."""
+    if should_skip(text, source=source):
         return "discard"
+    score = relevance_score(text)
     if score < 0.5:
         return "low"
     if score < 0.8:
@@ -112,13 +194,15 @@ def should_analyze(text: str) -> str:
     return "high"
 
 
-def classify_topic(text: str) -> dict[str, Any]:
+def classify_topic(text: str, source: dict[str, Any] | None = None) -> dict[str, Any]:
+    skip = should_skip(text, source=source)
     return {
         "relevance": relevance_score(text),
-        "bucket": should_analyze(text),
+        "bucket": should_analyze(text, source=source),
         "diseases": matched_diseases(text),
-        "skip": should_skip(text),
+        "skip": skip,
+        "watchlist_keep": bool(_is_watchlist_animal_health(source) and not skip),
         "threshold": RELEVANCE_THRESHOLD,
         "model_name": "keyword_relevance",
-        "model_version": "diseases_yaml_v1",
+        "model_version": "diseases_yaml_v2_watchlist",
     }

@@ -626,9 +626,13 @@ def review_alert(alert_id: str, payload: ReviewIn):
 
 
 @app.post("/cycle")
-def cycle(max_sources: int | None = Query(default=None, ge=0, le=200), demo_seed: bool = False):
+def cycle(
+    max_sources: int | None = Query(default=None, ge=0, le=500),
+    demo_seed: bool = False,
+    force_due: bool = False,
+):
     n = MAX_SOURCES if max_sources is None else max_sources
-    return run_cycle(max_sources=n, demo_seed=demo_seed)
+    return run_cycle(max_sources=n, demo_seed=demo_seed, force_due=force_due)
 
 
 def _cnn_json(name: str, default: Any = None):

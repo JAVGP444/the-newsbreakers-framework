@@ -22,8 +22,7 @@ frontend/dist/
 .next/
 dist/
 
-# Runtime data / dumps (recreated locally). GitHub never ships the Windows corpus.
-# Copy data/processed/tnb.db to another machine: see mac/copiar-datos.md
+# Runtime data / dumps (recreated locally).
 data/volumes/
 data/backups/
 data/cache/
@@ -34,15 +33,22 @@ data/processed/*.json
 data/raw/*
 !data/raw/.gitkeep
 
-# SQLite anywhere
+# SQLite anywhere — except the observatory snapshot Mac/Windows share.
 *.sqlite
 *.db
 *.db-wal
 *.db-shm
+!data/processed/tnb.db
 
-# Media / training dumps
+# Media / training dumps (track a small thumb set; skip cnn_synth)
 storage/images/*
 !storage/images/.gitkeep
+!storage/images/*.png
+!storage/images/*.jpg
+!storage/images/*.jpeg
+!storage/images/*.svg
+!storage/images/*.webp
+!storage/images/*.gif
 models/cnn/dataset/**/*.jpg
 models/cnn/dataset/**/*.jpeg
 models/cnn/dataset/**/*.png

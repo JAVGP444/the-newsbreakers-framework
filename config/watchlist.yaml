@@ -1,0 +1,56 @@
+# Watchlist local (Mac y Windows). No requiere Generador_Excel_Enfermedades.
+# El runtime fusiona esto con ingestion/sources/catalog.yaml + rss_overrides.yaml.
+# Solo API / RSS (y HTML listing si TNB_HTML_LISTINGS=1). No scrapea todo Internet.
+
+version: 1
+notes: bundled-watchlist
+rss_by_domain: {}
+extra_sources:
+  - source_id: SRC-PIGSITE
+    name: The Pig Site
+    domain: thepigsite.com
+    country: GB
+    language: en
+    type: VETERINARY_MEDIA
+    category: veterinary
+    priority: high
+    access_method: rss
+    rss_url: https://www.thepigsite.com/rss/
+    base_url: https://www.thepigsite.com
+    parser_version: parser_v1
+    frequency_minutes: 60
+    confidence: 70
+    active: true
+    diseases: [fiebre_porcina_clasica, gusano_barrenador]
+  - source_id: SRC-FEEDSTUFFS
+    name: Feedstuffs
+    domain: feedstuffs.com
+    country: US
+    language: en
+    type: VETERINARY_MEDIA
+    category: veterinary
+    priority: normal
+    access_method: rss
+    rss_url: https://www.feedstuffs.com/rss
+    base_url: https://www.feedstuffs.com
+    parser_version: parser_v1
+    frequency_minutes: 120
+    confidence: 65
+    active: true
+    diseases: [gripe_aviar, fiebre_porcina_clasica]
+  - source_id: SRC-USDA-APHIS-NEWS
+    name: USDA APHIS newsroom RSS
+    domain: aphis.usda.gov
+    country: US
+    language: en
+    type: OFFICIAL
+    category: official
+    priority: high
+    access_method: rss
+    rss_url: https://www.aphis.usda.gov/rss/news.xml
+    base_url: https://www.aphis.usda.gov
+    parser_version: parser_v1
+    frequency_minutes: 60
+    confidence: 85
+    active: true
+    diseases: [gripe_aviar, gusano_barrenador, fiebre_porcina_clasica]

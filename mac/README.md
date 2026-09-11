@@ -24,13 +24,13 @@ cd the-newsbreakers-framework
 3. Marca los scripts como ejecutables:
 
 ```bash
-chmod +x mac/Instalar-y-abrir.command mac/detener.command mac/minar.command
+chmod +x mac/Instalar-y-abrir.command mac/detener.command mac/minar.command mac/minar-ya.command
 ```
 
 4. Primera vez (Gatekeeper): clic derecho en `mac/Instalar-y-abrir.command` → **Abrir** → confirmar. O en Terminal: `./mac/Instalar-y-abrir.command`.
 5. Cuando termine, abre **http://127.0.0.1:5173/#/** (no uses `:3003`). Para parar: doble clic en `mac/detener.command`.
 
-Si ves **~26 artículos** y en Windows hay **~160**: GitHub no trae `data/processed/tnb.db`. Cópiala (USB/AirDrop) — guía: [`copiar-datos.md`](copiar-datos.md). Un ciclo RSS no iguala el corpus. Minería larga: `mac/minar.command` (el sleep pausa).
+Tras `git pull`, SQLite incluye ~160 notas. Recarga http://127.0.0.1:5173/#/. Para crecer esta noche: `mac/minar-ya.command` (varios ciclos, logs visibles). Guía: [`copiar-datos.md`](copiar-datos.md). El sleep del Mac pausa `minar.command`.
 
 Si macOS dice que no se puede abrir el `.command`, usa el clic derecho → Abrir del paso 4. No hace falta Docker.
 
@@ -55,7 +55,7 @@ Doble clic en `detener.command` (cierra **8010**, **5173** y el minero si lo arr
 
 ## Minería
 
-`mac/minar.command` deja `python mine_loop.py` en segundo plano. El sleep del Mac pausa el bucle. Log: `logs/mac-mine.log`.
+`mac/minar-ya.command` corre 8 ciclos seguidos (sin esperar 30 min) con logs en Terminal. `mac/minar.command` deja `python mine_loop.py` en **primer plano**. El sleep del Mac pausa el bucle. Log: `logs/mac-mine.log`.
 
 ## MySQL (opcional)
 

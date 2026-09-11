@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
 
@@ -16,28 +17,101 @@ GDELT_QUERY = '("avian influenza" OR H5N1 OR HPAI OR screwworm OR "classical swi
 
 def _gdelt_max(explicit: int | None = None) -> int:
     if explicit is not None:
-        return max(1, min(75, int(explicit)))
+        return max(1, min(250, int(explicit)))
     try:
-        return max(1, min(75, int(os.environ.get("TNB_GDELT_MAX", "40"))))
+        return max(1, min(250, int(os.environ.get("TNB_GDELT_MAX", "75"))))
     except ValueError:
-        return 40
+        return 75
 
 
-def fetch_gdelt(max_records: int | None = None, timeout: float = 25.0) -> list[dict[str, Any]]:
+def _lookback_days() -> int:
+    try:
+        return max(1, min(90, int(os.environ.get("TNB_GDELT_LOOKBACK_DAYS", "21"))))
+    except ValueError:
+        return 21
+
+
+def _windows_per_cycle() -> int:
+    try:
+        return max(1, min(8, int(os.environ.get("TNB_GDELT_WINDOWS", "4"))))
+    except ValueError:
+        return 4
+
+
+def gdelt_query_windows(
+    now: datetime | None = None,
+    offset_days: int = 0,
+    lookback_days: int | None = None,
+    windows: int | None = None,
+    window_hours: int = 24,
+) -> list[tuple[datetime, datetime]]:
+    """Ventanas históricas para no repetir siempre los mismos 40 artículos recientes."""
+    now = now or datetime.now(timezone.utc)
+    lookback = lookback_days if lookback_days is not None else _lookback_days()
+    n = windows if windows is not None else _windows_per_cycle()
+    offset = offset_days % max(1, lookback)
+    out: list[tuple[datetime, datetime]] = []
+    for i in range(n):
+        end = now - timedelta(days=offset, hours=i * window_hours)
+        start = end - timedelta(hours=window_hours)
+        if start < now - timedelta(days=lookback):
+            break
+        out.append((start, end))
+    return out
+
+
+def _fmt_gdelt(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).strftime("%Y%m%d%H%M%S")
+
+
+def fetch_gdelt(
+    max_records: int | None = None,
+    timeout: float = 25.0,
+    *,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    timespan: str | None = None,
+) -> list[dict[str, Any]]:
     max_records = _gdelt_max(max_records)
-    params = {
+    params: dict[str, str] = {
         "query": GDELT_QUERY,
         "mode": "ArtList",
         "maxrecords": str(max_records),
         "format": "json",
         "sort": "datedesc",
     }
+    if start and end:
+        params["startdatetime"] = _fmt_gdelt(start)
+        params["enddatetime"] = _fmt_gdelt(end)
+    elif timespan:
+        params["timespan"] = timespan
     url = f"{GDELT_URL}?{urlencode(params)}"
     with httpx.Client(timeout=timeout, follow_redirects=True, headers={"User-Agent": USER_AGENT}) as client:
         response = client.get(url)
         response.raise_for_status()
         data = response.json()
     return list(data.get("articles") or [])
+
+
+def _article_to_item(source: dict[str, Any], article: dict[str, Any]) -> UniversalContent | None:
+    url = article.get("url") or ""
+    if not url:
+        return None
+    title = article.get("title") or ""
+    domain = article.get("domain") or ""
+    seen = article.get("seendate") or ""
+    text = " ".join(
+        p for p in (title, seen, "avian influenza H5N1 HPAI screwworm SENASICA WOAH", domain) if p
+    )
+    return to_universal(
+        source_id=source.get("source_id") or "SRC109",
+        url=url,
+        title=title,
+        text=text,
+        published_at=seen or None,
+        language=article.get("language") or "und",
+        raw_format="api",
+    )
 
 
 def fetch_source_api(source: dict[str, Any], max_records: int | None = None) -> list[UniversalContent]:
@@ -47,21 +121,39 @@ def fetch_source_api(source: dict[str, Any], max_records: int | None = None) -> 
     if "gdelt" not in domain:
         return []
     polite_delay(source)
-    articles = fetch_gdelt(max_records=max_records)
+    seen: set[str] = set()
     items: list[UniversalContent] = []
-    for article in articles:
-        url = article.get("url") or ""
-        if not url:
+
+    def _absorb(articles: list[dict[str, Any]]) -> None:
+        for article in articles:
+            item = _article_to_item(source, article)
+            if not item or item.url in seen:
+                continue
+            seen.add(item.url)
+            items.append(item)
+
+    # Siempre la ventana reciente (notas nuevas) + ventanas históricas (crecimiento).
+    _absorb(fetch_gdelt(max_records=max_records, timespan="2d"))
+    offset = 0
+    try:
+        from database.mine_state import read_mine_state
+
+        offset = int((read_mine_state() or {}).get("gdelt_offset_days") or 0)
+    except Exception:
+        offset = 0
+    for start, end in gdelt_query_windows(offset_days=offset):
+        try:
+            _absorb(fetch_gdelt(max_records=max_records, start=start, end=end))
+        except Exception:
             continue
-        items.append(
-            to_universal(
-                source_id=source.get("source_id") or "SRC109",
-                url=url,
-                title=article.get("title") or "",
-                text=article.get("seendate") or f"Cobertura mediática — {article.get('domain', '')}",
-                published_at=article.get("seendate") or None,
-                language=article.get("language") or "und",
-                raw_format="api",
-            )
-        )
-    return items
+    try:
+        from database.mine_state import read_mine_state, write_mine_state
+
+        lookback = _lookback_days()
+        nxt = (offset + _windows_per_cycle()) % lookback
+        write_mine_state({**read_mine_state(), "gdelt_offset_days": nxt})
+    except Exception:
+        pass
+    from html_fetcher import enrich_rss_items
+
+    return enrich_rss_items(items, source)

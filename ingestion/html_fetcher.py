@@ -154,3 +154,95 @@ def enrich_rss_items(items: list[UniversalContent], source: dict[str, Any] | Non
             item.image_alts.append(extra_alts[i] if i < len(extra_alts) else "")
         fetched += 1
     return items
+
+
+def _listing_limit() -> int:
+    try:
+        return max(1, min(30, int(os.environ.get("TNB_HTML_LISTING_LIMIT", "12"))))
+    except ValueError:
+        return 12
+
+
+_SKIP_HREF = (
+    "/login",
+    "/privacy",
+    "/cookie",
+    "/tag/",
+    "/tags/",
+    "/share",
+    "javascript:",
+    "mailto:",
+    "#",
+)
+
+
+def fetch_source_listing(
+    source: dict[str, Any],
+    timeout: float = TIMEOUT,
+    limit: int | None = None,
+) -> list[UniversalContent]:
+    """HTML de la watchlist: extrae enlaces de la página base (no crawler abierto)."""
+    from access import polite_delay
+    from normalize import to_universal
+
+    if os.environ.get("TNB_HTML_LISTINGS", "1").strip() == "0":
+        return []
+    base = str(source.get("base_url") or "").strip()
+    if not base.startswith("http"):
+        return []
+    if not robots_allowed(base):
+        return []
+    polite_delay(source)
+    cap = limit if limit is not None else _listing_limit()
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True, headers=HEADERS) as client:
+            response = client.get(base)
+            response.raise_for_status()
+            html = response.text
+            final_url = str(response.url)
+    except Exception:
+        return []
+    host = (urlparse(final_url).hostname or "").lower()
+    hrefs: list[tuple[str, str]] = []
+    soup = _soup(html)
+    if soup is not None:
+        for a in soup.find_all("a"):
+            href = (a.get("href") or "").strip()
+            text = a.get_text(" ", strip=True)
+            hrefs.append((href, text))
+    else:
+        for m in re.finditer(r'href=["\']([^"\']+)["\']', html, flags=re.I):
+            hrefs.append((m.group(1), ""))
+    seen: set[str] = set()
+    items: list[UniversalContent] = []
+    for href, text in hrefs:
+        if not href or any(s in href.lower() for s in _SKIP_HREF):
+            continue
+        if href.startswith("//"):
+            href = "https:" + href
+        elif href.startswith("/"):
+            href = urljoin(final_url, href)
+        if not href.startswith("http"):
+            continue
+        link_host = (urlparse(href).hostname or "").lower()
+        if host and link_host and link_host != host and not link_host.endswith("." + host):
+            continue
+        if href.rstrip("/") == base.rstrip("/") or href in seen:
+            continue
+        title = (text or href).strip()
+        if len(title) < 12:
+            continue
+        seen.add(href)
+        items.append(
+            to_universal(
+                source_id=source.get("source_id") or "SRC-HTML",
+                url=href,
+                title=title[:240],
+                text=title,
+                raw_format="html",
+            )
+        )
+        if len(items) >= cap:
+            break
+    return enrich_rss_items(items, {**source, "access_method": "rss"})
+

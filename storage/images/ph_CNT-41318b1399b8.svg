@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" fill="#14532d"/>
+  <rect x="36" y="36" width="888" height="468" fill="none" stroke="#86efac" stroke-width="2" opacity="0.45"/>
+  <text x="480" y="230" text-anchor="middle" fill="#86efac" font-family="Georgia, serif" font-size="42">Gusano barrenador</text>
+  <text x="480" y="290" text-anchor="middle" fill="#cbd5e1" font-family="Segoe UI, sans-serif" font-size="20">SOCIAL_MEDIA</text>
+  <text x="480" y="340" text-anchor="middle" fill="#94a3b8" font-family="Segoe UI, sans-serif" font-size="16">Placeholder de enfermedad · observatorio</text>
+</svg>

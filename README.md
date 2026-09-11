@@ -13,16 +13,15 @@ Clona **este** repo (no `The-NewsBreakers`, que era la demo vieja FastAPI+Next.j
 cd ~
 git clone https://github.com/JAVGP444/the-newsbreakers-framework.git
 cd the-newsbreakers-framework
-chmod +x mac/Instalar-y-abrir.command mac/detener.command mac/minar.command
+chmod +x mac/Instalar-y-abrir.command mac/detener.command mac/minar.command mac/minar-ya.command
 ```
 
 3. Doble clic en `mac/Instalar-y-abrir.command` (primera vez: clic derecho → Abrir).
 4. El observatorio es **http://127.0.0.1:5173/#/** (Vite). La API está en **8010**.
 5. Para parar: `mac/detener.command`.
+6. El `git pull` trae `data/processed/tnb.db` (~160 notas). Luego `mac/minar-ya.command` para crecer. Guía: [`mac/copiar-datos.md`](mac/copiar-datos.md).
 
 Guía completa: [`mac/README.md`](mac/README.md). Docker no hace falta para ver la UI.
-
-Si el Mac muestra **~26 notas** y Windows **~160**: GitHub no incluye `data/processed/tnb.db`. Cópiala (USB/AirDrop) — [`mac/copiar-datos.md`](mac/copiar-datos.md). Un ciclo RSS no reproduce el corpus.
 
 ---
 
@@ -35,6 +34,7 @@ Alertas/SQLite → Dashboard.
 El producto vigente que se reutiliza (watchlist, diccionarios, Excel/HTML) es
 `C:\Users\javie\OneDrive\Escritorio\Generador_Excel_Enfermedades`
 (`TNB_DEMO_ROOT`). **No** es el verificador FastAPI+Next.js de `the-newsbreakers`.
+En Mac esa carpeta es **opcional**: la watchlist bundled (`config/watchlist.yaml` + `ingestion/sources/catalog.yaml`) basta para minar RSS/GDELT.
 
 **UI 24/7 de este framework:** http://127.0.0.1:5173 (Vite). El HTML
 `salida/urls_enfermedades_dashboard.html` es el observatorio Excel, no este dashboard.

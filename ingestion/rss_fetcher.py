@@ -87,9 +87,31 @@ def _rss_item_limit(explicit: int | None = None) -> int:
     if explicit is not None:
         return max(1, int(explicit))
     try:
-        return max(1, int(os.environ.get("TNB_RSS_LIMIT", "40")))
+        return max(1, int(os.environ.get("TNB_RSS_LIMIT", "100")))
     except ValueError:
-        return 40
+        return 100
+
+
+def _rss_max_pages() -> int:
+    try:
+        return max(1, min(8, int(os.environ.get("TNB_RSS_PAGES", "3"))))
+    except ValueError:
+        return 3
+
+
+def _next_feed_url(xml_text: str) -> str:
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return ""
+    for el in root.iter():
+        if _local(el.tag) != "link":
+            continue
+        rel = (el.get("rel") or "").lower()
+        href = (el.get("href") or "").strip()
+        if rel == "next" and href:
+            return href
+    return ""
 
 
 def parse_rss(xml_text: str, source_id: str, limit: int | None = None) -> list[UniversalContent]:
@@ -106,7 +128,7 @@ def parse_rss(xml_text: str, source_id: str, limit: int | None = None) -> list[U
             el for el in root.iter() if _local(el.tag) == "entry"
         ]
 
-    for item in nodes[:limit]:
+    for item in nodes:
         title = _text(_child(item, "title"))
         link_el = _child(item, "link")
         link = _text(link_el)
@@ -141,6 +163,8 @@ def parse_rss(xml_text: str, source_id: str, limit: int | None = None) -> list[U
                 raw_format="rss",
             )
         )
+        if len(items) >= limit:
+            break
     return items
 
 
@@ -154,13 +178,31 @@ def fetch_source_rss(
         return []
     if delay:
         polite_delay(source)
+    cap = _rss_item_limit(limit)
+    collected: list[UniversalContent] = []
+    seen: set[str] = set()
+    feed_url = str(source["rss_url"])
     with httpx.Client(timeout=timeout, follow_redirects=True, headers=HEADERS) as client:
-        response = client.get(source["rss_url"])
-        response.raise_for_status()
-        items = parse_rss(response.text, source["source_id"], limit=limit)
+        for _page in range(_rss_max_pages()):
+            response = client.get(feed_url)
+            response.raise_for_status()
+            xml_text = response.text
+            for item in parse_rss(xml_text, source["source_id"], limit=cap):
+                if item.url in seen:
+                    continue
+                seen.add(item.url)
+                collected.append(item)
+                if len(collected) >= cap:
+                    break
+            if len(collected) >= cap:
+                break
+            nxt = _next_feed_url(xml_text)
+            if not nxt or nxt == feed_url:
+                break
+            feed_url = nxt
     from html_fetcher import enrich_rss_items
 
-    return enrich_rss_items(items, source)
+    return enrich_rss_items(collected, source)
 
 
 def fetch_due_rss(dedup: DedupIndex | None = None) -> dict[str, Any]:

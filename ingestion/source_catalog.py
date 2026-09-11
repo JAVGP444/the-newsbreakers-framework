@@ -18,9 +18,10 @@ OVERRIDES_PATH = Path(__file__).resolve().parent / "sources" / "rss_overrides.ya
 _FW = Path(__file__).resolve().parents[1]
 if str(_FW) not in sys.path:
     sys.path.insert(0, str(_FW))
-from bootstrap import SOURCE_REGISTRY  # noqa: E402
+from bootstrap import FRAMEWORK_ROOT, SOURCE_REGISTRY, WATCHLIST_YAML  # noqa: E402
 
 LEGACY_DB = SOURCE_REGISTRY
+WATCHLIST_PATH = WATCHLIST_YAML if WATCHLIST_YAML.exists() else FRAMEWORK_ROOT / "config" / "watchlist.yaml"
 
 PRIORITY_MINUTES = {
     "critical": 15,
@@ -47,10 +48,26 @@ def _parse_dt(value: Any) -> datetime | None:
         return None
 
 
+def _merge_yaml_dicts(*blobs: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {"rss_by_domain": {}, "extra_sources": []}
+    for blob in blobs:
+        if not blob:
+            continue
+        for key, url in (blob.get("rss_by_domain") or {}).items():
+            merged["rss_by_domain"][str(key).lower()] = url
+        extras = blob.get("extra_sources") or []
+        if isinstance(extras, list):
+            merged["extra_sources"].extend(extras)
+    return merged
+
+
 def _load_overrides() -> dict[str, Any]:
-    if not OVERRIDES_PATH.is_file():
-        return {}
-    return yaml.safe_load(OVERRIDES_PATH.read_text(encoding="utf-8")) or {}
+    blobs: list[dict[str, Any]] = []
+    if OVERRIDES_PATH.is_file():
+        blobs.append(yaml.safe_load(OVERRIDES_PATH.read_text(encoding="utf-8")) or {})
+    if WATCHLIST_PATH.is_file():
+        blobs.append(yaml.safe_load(WATCHLIST_PATH.read_text(encoding="utf-8")) or {})
+    return _merge_yaml_dicts(*blobs)
 
 
 def load_catalog(path: Path | None = None) -> list[dict[str, Any]]:
@@ -158,8 +175,13 @@ def sources_due(
     sources: list[dict[str, Any]] | None = None,
     now: datetime | None = None,
     methods: tuple[str, ...] = ("api", "rss"),
+    force: bool = False,
 ) -> list[dict[str, Any]]:
-    """Fuentes pendientes. MVP: api/rss. scrape se lista aparte para log deferred."""
+    """Fuentes pendientes. MVP: api/rss. scrape se lista aparte para log deferred.
+
+    force=True ignora next_check (ráfagas Mac / minar-ya) para no quedarse en 0
+    ítems porque el ciclo anterior marcó las fuentes a +15–60 min.
+    """
     now = now or datetime.now(timezone.utc)
     rows = sources if sources is not None else active_sources()
     due: list[dict[str, Any]] = []
@@ -168,7 +190,7 @@ def sources_due(
             continue
         if select_access_method(source) not in methods:
             continue
-        if is_due(source, now=now):
+        if force or is_due(source, now=now):
             due.append(source)
     due.sort(key=lambda s: (frequency_minutes(s), s.get("source_id") or ""))
     return due

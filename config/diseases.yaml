@@ -1,0 +1,160 @@
+# Entity dictionary §30 — disease variants, SENASICA, symptoms, species
+
+diseases:
+  gusano_barrenador:
+    label: "Gusano barrenador del ganado"
+    canonical_id: gusano_barrenador
+    variants:
+      - gusano barrenador
+      - gusano barrenador del ganado
+      - GBG
+      - Cochliomyia hominivorax
+      - Cochliomyia
+      - screwworm
+      - new world screwworm
+      - NWS
+      - miasis
+      - myiasis
+      - barrenador
+    species_affected:
+      - bovino
+      - ganado bovino
+      - vacuno
+      - ovino
+      - caprino
+      - porcino
+      - equino
+    exclude:
+      - africana
+      - peste porcina africana
+
+  gripe_aviar:
+    label: "Gripe aviar / Influenza aviar"
+    canonical_id: gripe_aviar
+    variants:
+      - gripe aviar
+      - influenza aviar
+      - bird flu
+      - avian influenza
+      - H5N1
+      - H5N6
+      - H7N9
+      - HPAI
+      - LPAI
+      - virus aviar
+    species_affected:
+      - aves
+      - gallináceas
+      - patos
+      - aves de corral
+      - pollos
+      - pavos
+      - aves silvestres
+    exclude:
+      - gripe porcina
+      - influenza humana
+
+  fiebre_porcina_clasica:
+    label: "Peste porcina clásica"
+    canonical_id: fiebre_porcina_clasica
+    variants:
+      - peste porcina clásica
+      - peste porcina clasica
+      - classical swine fever
+      - hog cholera
+      - cólera porcino
+      - CSF
+      - PPC
+      # legacy synonym — Spanish press mislabel
+      - fiebre porcina clásica
+      - fiebre porcina clasica
+    species_affected:
+      - cerdo
+      - porcino
+      - cerdos
+      - lechones
+    exclude:
+      - africana
+      - african swine fever
+      - ASF
+      - ASFV
+      - PSA
+      - PPA
+      - peste porcina africana
+
+senasica:
+  label: "SENASICA — Servicio Nacional de Sanidad, Inocuidad y Calidad Agroalimentaria"
+  variants:
+    - SENASICA
+    - senasica
+    - Servicio Nacional de Sanidad
+    - sanidad agroalimentaria
+    - SADER
+    - Secretaría de Agricultura
+    - zona de contención
+    - campaña de erradicación
+    - módulo de inspección zoosanitaria
+    - certificado zoosanitario
+    - cuarentena zoosanitaria
+
+symptoms:
+  general:
+    - mortalidad
+    - morbilidad
+    - letalidad
+    - brote
+    - foco
+    - casos confirmados
+    - casos sospechosos
+    - sacrificio sanitario
+    - depopulación
+    - vacunación
+    - vacuna
+    - bioseguridad
+    - cuarentena
+    - restricción de movimiento
+  gusano_barrenador:
+    - miasis
+    - herida infectada
+    - larvas
+    - infestación
+    - miasina
+  gripe_aviar:
+    - mortalidad aviar
+    - descarte de aves
+    - síntomas respiratorios
+    - edema
+    - cianosis
+  fiebre_porcina_clasica:
+    - peste porcina
+    - petequias
+    - diarrea hemorrágica
+    - abortos
+
+species:
+  bovino: ["bovino", "ganado", "vacuno", "res", "toro", "vaca", "becerro"]
+  porcino: ["porcino", "cerdo", "lechón", "marrano", "puerco"]
+  aviar: ["ave", "aves", "pollo", "gallina", "pavo", "pato", "pato domesticado"]
+  ovino: ["ovino", "oveja", "cordero", "carnero"]
+  caprino: ["caprino", "cabra", "chivo"]
+  equino: ["equino", "caballo", "yegua", "potro"]
+
+locations:
+  mexico_states:
+    - Chihuahua
+    - Sonora
+    - Sinaloa
+    - Jalisco
+    - Veracruz
+    - Yucatán
+    - Tabasco
+    - Chiapas
+    - Nuevo León
+    - Tamaulipas
+  countries:
+    - México
+    - Estados Unidos
+    - Guatemala
+    - Colombia
+    - Brasil
+    - Argentina

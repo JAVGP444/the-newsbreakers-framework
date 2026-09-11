@@ -41,7 +41,10 @@ DATOS_DIR = PROJECT_ROOT / "datos"
 SALIDA_DIR = PROJECT_ROOT / "salida"
 DICT_DIR = NEWSBREAKERS_PKG / "dictionaries"
 SOURCE_REGISTRY = DATOS_DIR / "source_registry.yaml"
-DISEASES_YAML = DICT_DIR / "diseases.yaml"
+_GENERADOR_DISEASES = DICT_DIR / "diseases.yaml"
+_BUNDLED_DISEASES = FRAMEWORK_ROOT / "config" / "diseases.yaml"
+DISEASES_YAML = _GENERADOR_DISEASES if _GENERADOR_DISEASES.is_file() else _BUNDLED_DISEASES
+WATCHLIST_YAML = FRAMEWORK_ROOT / "config" / "watchlist.yaml"
 EXCEL_PKG = PROJECT_ROOT / "excel_enfermedades"
 
 # El verificador viejo ya no es la UI, pero SÍ se reutilizan NLP/LLM (claim_extractor, ai_verifier).
@@ -77,7 +80,9 @@ RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 DB_PATH = PROCESSED_DIR / "tnb.db"
 IMAGES_DIR = FRAMEWORK_ROOT / "storage" / "images"
-ENFERMEDADES_CONFIG = PROJECT_ROOT / "enfermedades_config.yaml"
+_GENERADOR_ENF_CFG = PROJECT_ROOT / "enfermedades_config.yaml"
+_BUNDLED_ENF_CFG = FRAMEWORK_ROOT / "config" / "enfermedades_config.yaml"
+ENFERMEDADES_CONFIG = _GENERADOR_ENF_CFG if _GENERADOR_ENF_CFG.is_file() else _BUNDLED_ENF_CFG
 NARRATIVES_YAML = DICT_DIR / "narratives.yaml"
 
 _PATHS = (

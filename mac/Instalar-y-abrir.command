@@ -7,7 +7,7 @@
 #
 # Windows / Git en Windows no suelen marcar el bit +x.
 # En el Mac, si Finder no lo abre:
-#   chmod +x mac/Instalar-y-abrir.command mac/detener.command
+#   chmod +x mac/Instalar-y-abrir.command mac/detener.command mac/minar.command mac/minar-ya.command
 
 set -euo pipefail
 
@@ -130,12 +130,13 @@ fi
 echo "Artículos en SQLite local: $ARTICLES"
 if [ "${ARTICLES:-0}" -lt 50 ] 2>/dev/null; then
   echo ""
-  echo "GitHub NO trae la base de Windows (~160 notas en tnb.db)."
-  echo "Un ciclo RSS no llega a 150. Para igualar hoy:"
-  echo "  1) Copia data/processed/tnb.db  →  mac/copiar-datos.md"
-  echo "  2) O deja minando horas:        →  mac/minar.command"
-  echo "     (el sleep del Mac pausa el minero)"
+  echo "SQLite local tiene pocas notas. Tras git pull debería haber ~160."
+  echo "  1) Para (detener.command) → git pull → vuelve a abrir este script"
+  echo "  2) Guía: mac/copiar-datos.md"
+  echo "Para crecer ya: mac/minar-ya.command (varios ciclos, logs visibles)"
   echo ""
+else
+  echo "Para seguir creciendo (sin Generador Excel): mac/minar-ya.command"
 fi
 
 sleep 4
@@ -149,5 +150,6 @@ echo "              $WEB_LOG"
 echo ""
 echo "Puedes cerrar esta ventana. Los servicios siguen en segundo plano."
 echo "Para parar: doble clic en detener.command"
-echo "Minería (opcional): mac/minar.command"
+echo "Minería (esta noche, ver el contador subir): mac/minar-ya.command"
+echo "Minería continua (primer plano):             mac/minar.command"
 echo ""

@@ -38,15 +38,19 @@ def read_mine_state() -> dict[str, Any]:
 
 def write_mine_state(payload: dict[str, Any]) -> dict[str, Any]:
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    STATE_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-    return payload
+    prev = read_mine_state()
+    prev.update(payload)
+    STATE_PATH.write_text(json.dumps(prev, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    return prev
 
 
 def record_cycle(summary: dict[str, Any], interval_seconds: int | None = None) -> dict[str, Any]:
     interval = mine_interval_seconds(interval_seconds)
     now = _now()
     nxt = now + timedelta(seconds=interval)
+    prev = read_mine_state()
     state = {
+        **prev,
         "last_mine": summary.get("ran_at") or now.isoformat(),
         "next_mine": nxt.isoformat(),
         "interval_seconds": interval,
@@ -58,6 +62,11 @@ def record_cycle(summary: dict[str, Any], interval_seconds: int | None = None) -
         "mysql": bool((summary.get("mysql") or {}).get("connected")),
         "kpis": summary.get("kpis") or {},
     }
+    extra = summary.get("extra") or {}
+    if "gdelt_offset_days" in extra:
+        state["gdelt_offset_days"] = extra["gdelt_offset_days"]
+    elif summary.get("gdelt_offset_days") is not None:
+        state["gdelt_offset_days"] = summary["gdelt_offset_days"]
     return write_mine_state(state)
 
 

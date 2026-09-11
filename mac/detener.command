@@ -47,6 +47,7 @@ if [ -f "$PID_FILE" ]; then
   rm -f "$PID_FILE"
 fi
 pkill -f "mine_loop.py" 2>/dev/null || true
+pkill -f "run_cycle.py" 2>/dev/null || true
 
 echo "Listo."
 echo ""

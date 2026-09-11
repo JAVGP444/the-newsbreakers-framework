@@ -29,7 +29,7 @@ from language import detect_language  # noqa: E402
 from llm import explain_with_evidence, probe_llm  # noqa: E402
 from nli import verify_claim  # noqa: E402
 from process import process_image, write_placeholder_png  # noqa: E402
-from relevance import classify_topic, should_skip  # noqa: E402
+from relevance import classify_topic
 from retrieve import retrieve_evidence  # noqa: E402
 from risk_engine import claim_severity_score, risk_score, source_unreliability  # noqa: E402
 from rss_fetcher import fetch_source_rss  # noqa: E402
@@ -44,9 +44,14 @@ from source_catalog import (  # noqa: E402
 from workers.queues import QUEUE_IMAGE, QUEUE_INGEST, QUEUE_NLP, drain, enqueue  # noqa: E402
 
 ALERT_THRESHOLD = int(os.environ.get("TNB_ALERT_THRESHOLD", "55"))
-MAX_SOURCES = int(os.environ.get("TNB_MAX_SOURCES", "40"))
+MAX_SOURCES = int(os.environ.get("TNB_MAX_SOURCES", "250"))
 RETRY_FAST = os.environ.get("TNB_FAST", "0") == "1"
 RETRY_WAITS = (2.0, 5.0) if RETRY_FAST else (30.0, 120.0)
+KEEP_FORMATS = {"youtube", "social", "corpus", "fixture", "api"}
+
+
+def _env_flag(name: str, default: str = "0") -> bool:
+    return os.environ.get(name, default).strip() in {"1", "true", "True", "yes"}
 
 
 def _want_demo_seed(explicit: bool = False) -> bool:
@@ -71,6 +76,10 @@ def _retry_fetch(source: dict[str, Any], method: str) -> tuple[list[Any], str | 
                 return fetch_source_rss(source, delay=True), None
             if method == "api":
                 return fetch_source_api(source), None
+            if method == "scrape":
+                from html_fetcher import fetch_source_listing
+
+                return fetch_source_listing(source), None
             return [], "unsupported method"
         except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
@@ -161,8 +170,9 @@ def analyze_article(
     llm_budget: list[int] | None = None,
 ) -> dict[str, Any]:
     text = f"{item.get('title') or ''} {item.get('text') or ''}"
-    topic = classify_topic(text)
-    if topic["skip"] and item.get("raw_format") not in {"youtube", "social", "corpus", "fixture"}:
+    topic = classify_topic(text, source=source)
+    raw_fmt = str(item.get("raw_format") or "")
+    if topic["skip"] and raw_fmt not in KEEP_FORMATS:
         store.audit("article", item["content_id"], "relevance_skip", topic)
         return {"skipped": True, "reason": "relevance", "relevance": topic["relevance"]}
 
@@ -393,6 +403,7 @@ def run_cycle(
     max_sources: int = MAX_SOURCES,
     demo_seed: bool = False,
     persist: bool = True,
+    force_due: bool | None = None,
 ) -> dict[str, Any]:
     now = _now()
     cycle_id = "CYC-" + now.strftime("%Y%m%dT%H%M%SZ")
@@ -410,16 +421,32 @@ def run_cycle(
         row = store.get_source(source["source_id"])
         runtime.append(merge_runtime(source, row))
 
-    due_all = sources_due(runtime, now=now, methods=("api", "rss"))
+    force = _env_flag("TNB_FORCE_DUE") if force_due is None else bool(force_due)
+    html_listings = os.environ.get("TNB_HTML_LISTINGS", "1").strip() != "0"
+    harvest_methods: tuple[str, ...] = ("api", "rss", "scrape") if html_listings else ("api", "rss")
     empty_db = store.count_articles() == 0
+    due_all = sources_due(runtime, now=now, methods=harvest_methods, force=force or empty_db)
     if max_sources <= 0:
         due = []
-    elif empty_db:
+    elif empty_db or force:
         due = due_all
-        print(f"  [primer ciclo] SQLite vacío — {len(due)} fuentes RSS/API (sin recortar a {max_sources})")
+        why = "SQLite vacío" if empty_db else "force-due"
+        print(f"  [{why}] {len(due)} fuentes {harvest_methods} (sin recortar a {max_sources})")
     else:
         due = due_all[: max_sources]
-    scrape_due = sources_due(runtime, now=now, methods=("scrape",))[:8]
+        if len(due_all) > max_sources:
+            print(f"  [tope] {max_sources}/{len(due_all)} fuentes due (sube TNB_MAX_SOURCES)")
+    try:
+        scrape_cap = max(0, int(os.environ.get("TNB_HTML_LISTING_SOURCES", "10")))
+    except ValueError:
+        scrape_cap = 10
+    if html_listings and scrape_cap >= 0:
+        rss_api = [s for s in due if resolve_access(s) != "scrape"]
+        scrape_only = [s for s in due if resolve_access(s) == "scrape"]
+        due = rss_api + scrape_only[:scrape_cap]
+        if len(scrape_only) > scrape_cap:
+            print(f"  [html listing] {scrape_cap}/{len(scrape_only)} fuentes scrape este ciclo (el resto en el siguiente)")
+    scrape_due = sources_due(runtime, now=now, methods=("scrape",), force=force)[:8]
     index = DedupIndex.from_store(store)
 
     sources_checked = 0
@@ -428,22 +455,29 @@ def run_cycle(
     collected: list[dict[str, Any]] = []
     skipped_dup = 0
     skipped_rel = 0
+    skipped_fetch = 0
+    skip_samples: dict[str, list[str]] = {"duplicate": [], "irrelevant": [], "fetch": []}
+    verbose_skips = _env_flag("TNB_VERBOSE_SKIPS")
     claims_n = 0
     alerts_n = 0
     image_jobs: list[dict[str, Any]] = []
 
-    for source in scrape_due:
-        note = scrape_deferred_note(source)
-        store.mark_source_result(
-            source["source_id"],
-            ok=True,
-            error=None,
-            next_check=_iso(now + timedelta(minutes=frequency_minutes(source))),
-            note=note,
-        )
-        store.audit("source", source["source_id"], "scrape_deferred", {"note": note})
-        scrape_deferred += 1
-        print(f"  [scrape deferred] {source.get('source_id')} {source.get('name')}")
+    if not html_listings:
+        for source in scrape_due:
+            note = scrape_deferred_note(source)
+            store.mark_source_result(
+                source["source_id"],
+                ok=True,
+                error=None,
+                next_check=_iso(now + timedelta(minutes=frequency_minutes(source))),
+                note=note,
+            )
+            store.audit("source", source["source_id"], "scrape_deferred", {"note": note})
+            scrape_deferred += 1
+            print(f"  [scrape deferred] {source.get('source_id')} {source.get('name')}")
+    else:
+        n_html = sum(1 for s in due if resolve_access(s) == "scrape")
+        print(f"  [html listing] {n_html} fuentes scrape de la watchlist (TNB_HTML_LISTINGS=1)")
 
     for source in due:
         method = resolve_access(source)
@@ -455,11 +489,17 @@ def run_cycle(
             nxt = backoff_next_check(fails, now=now)
             store.mark_source_result(source["source_id"], ok=False, error=error, next_check=_iso(nxt))
             errors.append({"source_id": source["source_id"], "error": error})
-            print(f"  [error] {source.get('source_id')} {error[:120]}")
+            skipped_fetch += 1
+            sample = f"{source.get('source_id')}: {error[:100]}"
+            if verbose_skips or len(skip_samples["fetch"]) < 8:
+                skip_samples["fetch"].append(sample)
+            print(f"  [error fetch] {source.get('source_id')} {error[:120]}")
             continue
         nxt = now + timedelta(minutes=frequency_minutes(source))
         store.mark_source_result(source["source_id"], ok=True, next_check=_iso(nxt))
         store.audit("source", source["source_id"], "checked", {"method": method, "items": len(items)})
+        new_from_source = 0
+        dup_from_source = 0
         for item in items:
             payload = item.to_dict() if hasattr(item, "to_dict") else dict(item)
             append_raw(source["source_id"], {"source": source["source_id"], "item": payload})
@@ -467,9 +507,18 @@ def run_cycle(
             dup, reason = index.register(payload.get("url") or "", text)
             if dup:
                 skipped_dup += 1
+                dup_from_source += 1
                 store.audit("article", payload.get("url") or "", "dedup", {"reason": reason})
+                if verbose_skips or len(skip_samples["duplicate"]) < 8:
+                    title = (payload.get("title") or payload.get("url") or "")[:70]
+                    skip_samples["duplicate"].append(f"{reason} {title}")
                 continue
             collected.append(payload)
+            new_from_source += 1
+        print(
+            f"  [{source.get('source_id')}] {method} ítems={len(items)} "
+            f"nuevos_url={new_from_source} duplicados={dup_from_source}"
+        )
 
     if _want_demo_seed(demo_seed) and not collected:
         seeded = inject_demo_seed(store, index)
@@ -499,6 +548,15 @@ def run_cycle(
             continue
         if result.get("skipped"):
             skipped_rel += 1
+            title = (payload.get("title") or payload.get("url") or "")[:70]
+            rel = result.get("relevance")
+            sample = f"{rel if rel is not None else '?'} {title}"
+            if verbose_skips or len(skip_samples["irrelevant"]) < 12:
+                skip_samples["irrelevant"].append(sample)
+            if verbose_skips or skipped_rel <= 12:
+                print(f"  [omitido irrelevante] {sample}")
+            elif skipped_rel == 13:
+                print("  [omitido irrelevante] … más (TNB_VERBOSE_SKIPS=1 para ver todos)")
             continue
         analyzed += 1
         claims_n += int(result.get("claims") or 0)
@@ -543,8 +601,10 @@ def run_cycle(
             "errors": len(errors),
             "extra": {
                 "skipped_duplicates": skipped_dup,
+                "skipped_fetch": skipped_fetch,
                 "cnn_samples_new": cnn_samples_n,
                 "scrape_deferred": scrape_deferred,
+                "skip_samples": skip_samples,
             },
         }
     )
@@ -560,6 +620,8 @@ def run_cycle(
         "articles_new": analyzed,
         "skipped_duplicates": skipped_dup,
         "skipped_relevance": skipped_rel,
+        "skipped_fetch": skipped_fetch,
+        "skip_samples": skip_samples,
         "images_processed": images_n,
         "cnn_samples_new": cnn_samples_n,
         "cnn_dataset": dataset_counts(),
@@ -600,6 +662,21 @@ def _print_es(summary: dict[str, Any]) -> None:
     print(f"Alertas:               {summary['alerts']}")
     print(f"Duplicados omitidos:   {summary['skipped_duplicates']}")
     print(f"Irrelevantes omitidos: {summary['skipped_relevance']}")
+    print(f"Fetch fallidos:        {summary.get('skipped_fetch') or 0}")
+    samples = summary.get("skip_samples") or {}
+    for kind, label in (("fetch", "Fetch"), ("duplicate", "Duplicado"), ("irrelevant", "Irrelevante")):
+        rows = samples.get(kind) or []
+        if not rows:
+            continue
+        print(f"  ejemplos {label}:")
+        for row in rows[:6]:
+            print(f"    - {row}")
+    if (summary.get("articles_new") or 0) == 0:
+        print("  [aviso] 0 artículos nuevos.")
+        print("    Duplicado = las mismas URLs de RSS/GDELT ya están en SQLite.")
+        print("    Irrelevante = el filtro de keywords las descartó.")
+        print("    Fetch = la fuente falló (red, HTTP, XML).")
+        print("    Siguiente ciclo con --force-due usa ventanas GDELT más antiguas.")
     if summary.get("errors"):
         print(f"Errores de fuente:     {len(summary['errors'])}")
     mysql = summary.get("mysql") or {}
@@ -645,24 +722,44 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     parser.add_argument("--interval", type=int, default=None, help="Segundos entre ciclos (ej. 1800)")
     parser.add_argument("--demo-seed", action="store_true", help="Inyectar artículos demo")
     parser.add_argument("--max-sources", type=int, default=MAX_SOURCES)
+    parser.add_argument("--cycles", type=int, default=1, help="Ciclos seguidos sin dormir (minar-ya)")
+    parser.add_argument("--force-due", action="store_true", help="Ignorar next_check; recorrer toda la watchlist")
     args = parser.parse_args(argv)
-    os.environ.setdefault("TNB_DEMO_ROOT", str(PROJECT_ROOT))
+    if args.force_due:
+        os.environ["TNB_FORCE_DUE"] = "1"
     from database.mine_state import mine_interval_seconds, record_cycle
 
-    while True:
-        summary = run_cycle(max_sources=args.max_sources, demo_seed=args.demo_seed)
-        if not args.loop:
-            return summary
-        if args.interval and args.interval > 0:
-            sleep_s = max(15, args.interval)
-        elif os.environ.get("TNB_MINE_INTERVAL_MINUTES"):
-            sleep_s = mine_interval_seconds(args.interval)
-        else:
-            store = Store()
-            sleep_s = next_sleep_seconds(store)
-        record_cycle(summary, sleep_s)
-        print(f"Siguiente ciclo en {sleep_s}s…")
-        time.sleep(sleep_s)
+    def _one() -> dict[str, Any]:
+        return run_cycle(
+            max_sources=args.max_sources,
+            demo_seed=args.demo_seed,
+            force_due=args.force_due,
+        )
+
+    if args.loop:
+        while True:
+            summary = _one()
+            if args.interval and args.interval > 0:
+                sleep_s = max(15, args.interval)
+            elif os.environ.get("TNB_MINE_INTERVAL_MINUTES"):
+                sleep_s = mine_interval_seconds(args.interval)
+            else:
+                store = Store()
+                sleep_s = next_sleep_seconds(store)
+            record_cycle(summary, sleep_s)
+            print(f"Siguiente ciclo en {sleep_s}s…")
+            time.sleep(sleep_s)
+
+    n_cycles = max(1, int(args.cycles or 1))
+    last: dict[str, Any] | None = None
+    for i in range(n_cycles):
+        if n_cycles > 1:
+            print(f"\n===== ciclo {i + 1}/{n_cycles} =====")
+        last = _one()
+        if n_cycles > 1:
+            kpis = (last or {}).get("kpis") or {}
+            print(f"Total artículos en SQLite: {kpis.get('articles')}")
+    return last or {}
 
 
 if __name__ == "__main__":
