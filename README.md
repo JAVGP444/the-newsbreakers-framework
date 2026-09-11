@@ -13,7 +13,7 @@ Clona **este** repo (no `The-NewsBreakers`, que era la demo vieja FastAPI+Next.j
 cd ~
 git clone https://github.com/JAVGP444/the-newsbreakers-framework.git
 cd the-newsbreakers-framework
-chmod +x mac/Instalar-y-abrir.command mac/detener.command
+chmod +x mac/Instalar-y-abrir.command mac/detener.command mac/minar.command
 ```
 
 3. Doble clic en `mac/Instalar-y-abrir.command` (primera vez: clic derecho → Abrir).
@@ -21,6 +21,8 @@ chmod +x mac/Instalar-y-abrir.command mac/detener.command
 5. Para parar: `mac/detener.command`.
 
 Guía completa: [`mac/README.md`](mac/README.md). Docker no hace falta para ver la UI.
+
+Si el Mac muestra **~26 notas** y Windows **~160**: GitHub no incluye `data/processed/tnb.db`. Cópiala (USB/AirDrop) — [`mac/copiar-datos.md`](mac/copiar-datos.md). Un ciclo RSS no reproduce el corpus.
 
 ---
 

@@ -70,6 +70,11 @@ echo "Instalando dependencias del dashboard..."
   npm install
 )
 
+if [ ! -f "$ROOT/.env" ] && [ -f "$ROOT/.env.example" ]; then
+  cp "$ROOT/.env.example" "$ROOT/.env"
+  echo "Creado .env desde .env.example (sin secretos)."
+fi
+
 if [ -z "${TNB_DEMO_ROOT:-}" ]; then
   if [ -d "$ROOT/../Generador_Excel_Enfermedades" ]; then
     export TNB_DEMO_ROOT="$(cd "$ROOT/../Generador_Excel_Enfermedades" && pwd)"
@@ -118,6 +123,21 @@ echo "Opcional, warehouse MySQL desde la raíz del repo:"
 echo "  cd \"$ROOT\" && docker compose up -d mysql"
 echo ""
 
+ARTICLES=0
+if [ -f "$ROOT/data/processed/tnb.db" ]; then
+  ARTICLES="$(python -c "import sqlite3; print(sqlite3.connect('data/processed/tnb.db').execute('select count(*) from articles').fetchone()[0])" 2>/dev/null || echo 0)"
+fi
+echo "Artículos en SQLite local: $ARTICLES"
+if [ "${ARTICLES:-0}" -lt 50 ] 2>/dev/null; then
+  echo ""
+  echo "GitHub NO trae la base de Windows (~160 notas en tnb.db)."
+  echo "Un ciclo RSS no llega a 150. Para igualar hoy:"
+  echo "  1) Copia data/processed/tnb.db  →  mac/copiar-datos.md"
+  echo "  2) O deja minando horas:        →  mac/minar.command"
+  echo "     (el sleep del Mac pausa el minero)"
+  echo ""
+fi
+
 sleep 4
 open "$WEB_URL"
 
@@ -129,4 +149,5 @@ echo "              $WEB_LOG"
 echo ""
 echo "Puedes cerrar esta ventana. Los servicios siguen en segundo plano."
 echo "Para parar: doble clic en detener.command"
+echo "Minería (opcional): mac/minar.command"
 echo ""

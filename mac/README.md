@@ -24,11 +24,13 @@ cd the-newsbreakers-framework
 3. Marca los scripts como ejecutables:
 
 ```bash
-chmod +x mac/Instalar-y-abrir.command mac/detener.command
+chmod +x mac/Instalar-y-abrir.command mac/detener.command mac/minar.command
 ```
 
 4. Primera vez (Gatekeeper): clic derecho en `mac/Instalar-y-abrir.command` → **Abrir** → confirmar. O en Terminal: `./mac/Instalar-y-abrir.command`.
 5. Cuando termine, abre **http://127.0.0.1:5173/#/** (no uses `:3003`). Para parar: doble clic en `mac/detener.command`.
+
+Si ves **~26 artículos** y en Windows hay **~160**: GitHub no trae `data/processed/tnb.db`. Cópiala (USB/AirDrop) — guía: [`copiar-datos.md`](copiar-datos.md). Un ciclo RSS no iguala el corpus. Minería larga: `mac/minar.command` (el sleep pausa).
 
 Si macOS dice que no se puede abrir el `.command`, usa el clic derecho → Abrir del paso 4. No hace falta Docker.
 
@@ -49,7 +51,11 @@ Opcional: carpeta hermana `Generador_Excel_Enfermedades` (junto al repo o en `~/
 
 ## Detener
 
-Doble clic en `detener.command` (cierra lo que escuche en **8010** y **5173**).
+Doble clic en `detener.command` (cierra **8010**, **5173** y el minero si lo arrancaste).
+
+## Minería
+
+`mac/minar.command` deja `python mine_loop.py` en segundo plano. El sleep del Mac pausa el bucle. Log: `logs/mac-mine.log`.
 
 ## MySQL (opcional)
 
@@ -71,6 +77,7 @@ MYSQL_PORT=3307 MYSQL_PUBLISH_PORT=3307 docker compose up -d mysql
 
 - `logs/mac-api.log` — uvicorn (API)
 - `logs/mac-web.log` — Vite (dashboard)
+- `logs/mac-mine.log` — minero (`mac/minar.command`)
 
 ## URLs
 

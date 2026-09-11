@@ -1,6 +1,7 @@
 """Ingesta RSS — httpx + ElementTree. Extrae título, link, summary e imágenes."""
 from __future__ import annotations
 
+import os
 import re
 from typing import Any
 from xml.etree import ElementTree as ET
@@ -82,7 +83,17 @@ def _image_urls(item: ET.Element) -> tuple[list[str], list[str]]:
     return out_urls, out_alts
 
 
-def parse_rss(xml_text: str, source_id: str, limit: int = 20) -> list[UniversalContent]:
+def _rss_item_limit(explicit: int | None = None) -> int:
+    if explicit is not None:
+        return max(1, int(explicit))
+    try:
+        return max(1, int(os.environ.get("TNB_RSS_LIMIT", "40")))
+    except ValueError:
+        return 40
+
+
+def parse_rss(xml_text: str, source_id: str, limit: int | None = None) -> list[UniversalContent]:
+    limit = _rss_item_limit(limit)
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError:
@@ -137,7 +148,7 @@ def fetch_source_rss(
     source: dict[str, Any],
     timeout: float = 20.0,
     delay: bool = True,
-    limit: int = 12,
+    limit: int | None = None,
 ) -> list[UniversalContent]:
     if resolve_access(source) != "rss" or not source.get("rss_url"):
         return []

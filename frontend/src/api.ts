@@ -394,7 +394,7 @@ export const api = {
     return res.json() as Promise<CnnPredict>;
   },
   cycle: async () => {
-    const res = await fetch(`${API}/cycle?demo_seed=false&max_sources=8`, {
+    const res = await fetch(`${API}/cycle?demo_seed=false`, {
       method: "POST",
       headers: authHeaders(),
     });

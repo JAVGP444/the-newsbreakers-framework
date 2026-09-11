@@ -1,6 +1,7 @@
 """Adaptador API — GDELT DOC 2.0 vía httpx (sin el verificador viejo)."""
 from __future__ import annotations
 
+import os
 from typing import Any
 from urllib.parse import urlencode
 
@@ -13,7 +14,17 @@ GDELT_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 GDELT_QUERY = '("avian influenza" OR H5N1 OR HPAI OR screwworm OR "classical swine fever" OR "gusano barrenador" OR "gripe aviar" OR SENASICA OR WOAH)'
 
 
-def fetch_gdelt(max_records: int = 8, timeout: float = 25.0) -> list[dict[str, Any]]:
+def _gdelt_max(explicit: int | None = None) -> int:
+    if explicit is not None:
+        return max(1, min(75, int(explicit)))
+    try:
+        return max(1, min(75, int(os.environ.get("TNB_GDELT_MAX", "40"))))
+    except ValueError:
+        return 40
+
+
+def fetch_gdelt(max_records: int | None = None, timeout: float = 25.0) -> list[dict[str, Any]]:
+    max_records = _gdelt_max(max_records)
     params = {
         "query": GDELT_QUERY,
         "mode": "ArtList",
@@ -29,7 +40,7 @@ def fetch_gdelt(max_records: int = 8, timeout: float = 25.0) -> list[dict[str, A
     return list(data.get("articles") or [])
 
 
-def fetch_source_api(source: dict[str, Any], max_records: int = 8) -> list[UniversalContent]:
+def fetch_source_api(source: dict[str, Any], max_records: int | None = None) -> list[UniversalContent]:
     if resolve_access(source) != "api":
         return []
     domain = str(source.get("domain") or "")

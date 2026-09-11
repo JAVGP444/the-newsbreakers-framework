@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -255,7 +256,12 @@ def corpus_to_universal(row: dict[str, Any], index: int) -> Any:
     return payload
 
 
-def inject_corpus(store: Any, index: DedupIndex, *, limit_news: int = 90) -> list[dict[str, Any]]:
+def inject_corpus(store: Any, index: DedupIndex, *, limit_news: int | None = None) -> list[dict[str, Any]]:
+    if limit_news is None:
+        try:
+            limit_news = max(1, int(os.environ.get("TNB_CORPUS_NEWS_LIMIT", "200")))
+        except ValueError:
+            limit_news = 200
     created: list[dict[str, Any]] = []
     for i, row in enumerate(load_generador_rows(limit_news=limit_news)):
         payload = corpus_to_universal(row, i)

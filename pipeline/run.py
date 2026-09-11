@@ -44,7 +44,7 @@ from source_catalog import (  # noqa: E402
 from workers.queues import QUEUE_IMAGE, QUEUE_INGEST, QUEUE_NLP, drain, enqueue  # noqa: E402
 
 ALERT_THRESHOLD = int(os.environ.get("TNB_ALERT_THRESHOLD", "55"))
-MAX_SOURCES = int(os.environ.get("TNB_MAX_SOURCES", "12"))
+MAX_SOURCES = int(os.environ.get("TNB_MAX_SOURCES", "40"))
 RETRY_FAST = os.environ.get("TNB_FAST", "0") == "1"
 RETRY_WAITS = (2.0, 5.0) if RETRY_FAST else (30.0, 120.0)
 
@@ -410,7 +410,15 @@ def run_cycle(
         row = store.get_source(source["source_id"])
         runtime.append(merge_runtime(source, row))
 
-    due = sources_due(runtime, now=now, methods=("api", "rss"))[: max(1, max_sources)]
+    due_all = sources_due(runtime, now=now, methods=("api", "rss"))
+    empty_db = store.count_articles() == 0
+    if max_sources <= 0:
+        due = []
+    elif empty_db:
+        due = due_all
+        print(f"  [primer ciclo] SQLite vacío — {len(due)} fuentes RSS/API (sin recortar a {max_sources})")
+    else:
+        due = due_all[: max_sources]
     scrape_due = sources_due(runtime, now=now, methods=("scrape",))[:8]
     index = DedupIndex.from_store(store)
 

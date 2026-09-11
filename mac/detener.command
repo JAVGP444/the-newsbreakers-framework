@@ -34,5 +34,19 @@ kill_port() {
 kill_port 8010
 kill_port 5173
 
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PID_FILE="$ROOT/logs/mac-mine.pid"
+if [ -f "$PID_FILE" ]; then
+  old="$(cat "$PID_FILE" 2>/dev/null || true)"
+  if [ -n "${old}" ]; then
+    echo "Minero: deteniendo PID $old"
+    kill "$old" 2>/dev/null || true
+    sleep 1
+    kill -9 "$old" 2>/dev/null || true
+  fi
+  rm -f "$PID_FILE"
+fi
+pkill -f "mine_loop.py" 2>/dev/null || true
+
 echo "Listo."
 echo ""

@@ -23,7 +23,10 @@ HEADERS = {
 TIMEOUT = 12.0
 MIN_RSS_CHARS = 480
 MAX_BODY_CHARS = 20000
-MAX_FETCH_PER_SOURCE = 8
+try:
+    MAX_FETCH_PER_SOURCE = max(1, int(os.environ.get("TNB_HTML_FETCH_PER_SOURCE", "20")))
+except ValueError:
+    MAX_FETCH_PER_SOURCE = 20
 
 _MAIN_SELECTORS = (
     "article",

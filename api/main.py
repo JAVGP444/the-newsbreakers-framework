@@ -23,7 +23,7 @@ ensure_paths()
 
 from database.query_filters import parse_article_query  # noqa: E402
 from database.store import Store  # noqa: E402
-from pipeline.run import run_cycle  # noqa: E402
+from pipeline.run import MAX_SOURCES, run_cycle  # noqa: E402
 from source_catalog import frequency_minutes, select_access_method  # noqa: E402
 from workers.queues import QUEUES  # noqa: E402
 
@@ -626,8 +626,9 @@ def review_alert(alert_id: str, payload: ReviewIn):
 
 
 @app.post("/cycle")
-def cycle(max_sources: int = 8, demo_seed: bool = False):
-    return run_cycle(max_sources=max_sources, demo_seed=demo_seed)
+def cycle(max_sources: int | None = Query(default=None, ge=0, le=200), demo_seed: bool = False):
+    n = MAX_SOURCES if max_sources is None else max_sources
+    return run_cycle(max_sources=n, demo_seed=demo_seed)
 
 
 def _cnn_json(name: str, default: Any = None):

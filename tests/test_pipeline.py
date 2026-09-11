@@ -36,9 +36,9 @@ def test_cycle_demo_seed_writes_articles(tmp_path, monkeypatch):
     monkeypatch.setattr("pipeline.run.MAX_SOURCES", 0)
     summary = run_cycle(max_sources=0, demo_seed=True)
     assert summary["articles_new"] >= 1
-    assert summary["claims"] >= 1
     store = Store(db)
     assert store.count_articles() >= 1
+    assert store.count_claims() >= 1
     arts = store.list_articles()
     assert all("FAKE" not in (a.get("verdict") or "") for a in arts)
     blob = " ".join(str(a.get("url") or "") for a in arts).lower()

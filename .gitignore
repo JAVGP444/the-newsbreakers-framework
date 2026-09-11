@@ -22,7 +22,8 @@ frontend/dist/
 .next/
 dist/
 
-# Runtime data / dumps (recreated locally)
+# Runtime data / dumps (recreated locally). GitHub never ships the Windows corpus.
+# Copy data/processed/tnb.db to another machine: see mac/copiar-datos.md
 data/volumes/
 data/backups/
 data/cache/
