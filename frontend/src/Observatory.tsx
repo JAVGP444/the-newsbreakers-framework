@@ -26,10 +26,12 @@ import { ensureGeoPoints } from "./geoCentroids";
 import {
   DISEASE_VISUAL,
   KIND_LABEL,
+  cardExcerpt,
   flowText,
   stanceLabel,
   verdictLabel,
 } from "./display";
+import { useTranslated } from "./translate";
 import {
   activeFilterChips,
   chipLabel,
@@ -457,14 +459,25 @@ function ArticleGrid({
   onPage: (n: number) => void;
   onClear: () => void;
 }) {
+  const titles = articles.map((a) => a.title || a.url || a.content_id);
+  const summaries = articles.map((a) => cardExcerpt(a.text, a.title));
+  const tTitles = useTranslated(titles);
+  const tSummaries = useTranslated(summaries);
+
   return (
     <section className="sala-list">
       <p className="muted list-count">
         {total} documentos · página {page} de {pageCount}
       </p>
       <div className="art-cards">
-        {articles.map((a) => (
-          <ArticleCard key={a.content_id} article={a} sourceName={sourceNames.get(a.source_id)} />
+        {articles.map((a, i) => (
+          <ArticleCard
+            key={a.content_id}
+            article={a}
+            sourceName={sourceNames.get(a.source_id)}
+            title={tTitles[i]}
+            summary={tSummaries[i]}
+          />
         ))}
       </div>
       {!articles.length && dbEmpty && <p className="muted">Aún no hay documentos. Ejecuta un ciclo desde la sala.</p>}

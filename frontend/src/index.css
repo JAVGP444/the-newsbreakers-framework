@@ -232,6 +232,23 @@ h4 {
 }
 .run:disabled { opacity: 0.6; cursor: wait; }
 .top-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.translate-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.translate-toggle input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+.translate-toggle.on { color: var(--ink); }
 .banner { background: var(--panel); border: 1px solid var(--line); padding: 10px 12px; font-size: 14px; border-radius: 8px; }
 .banner.err { border-color: var(--bad); color: #f0c7c0; }
 .banner.mine-banner { color: var(--muted); }

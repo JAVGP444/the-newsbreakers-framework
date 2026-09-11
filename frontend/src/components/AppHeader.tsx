@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { api } from "../api";
+import { TranslateToggle } from "../translate";
 import VerdictLegend from "./VerdictLegend";
 
 const NAV = [
@@ -54,7 +55,10 @@ export default function AppHeader({
           <h1>{title}</h1>
           {subtitle ? <p className="muted header-sub">{subtitle}</p> : null}
         </div>
-        {actions ? <div className="top-actions">{actions}</div> : null}
+        <div className="top-actions">
+          <TranslateToggle />
+          {actions}
+        </div>
       </div>
       <nav className="site-nav" aria-label="Secciones del observatorio">
         {NAV.map((item) => (

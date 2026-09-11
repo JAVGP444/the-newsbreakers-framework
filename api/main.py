@@ -113,6 +113,10 @@ class ReviewIn(BaseModel):
     analyst: str = "analista"
 
 
+class TranslateIn(BaseModel):
+    texts: list[str] = []
+
+
 def _store() -> Store:
     return Store()
 
@@ -598,6 +602,14 @@ def status():
         "kpis": _store().kpis(),
         "llm_does_not_decide_truth": True,
     }
+
+
+@app.post("/translate")
+def translate(payload: TranslateIn):
+    from api.translate import translate_texts
+
+    texts = payload.texts or []
+    return {"texts": translate_texts(texts)}
 
 
 @app.post("/alerts/{alert_id}/review")

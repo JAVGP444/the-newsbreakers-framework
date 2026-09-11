@@ -401,6 +401,17 @@ export const api = {
     if (!res.ok) throw new Error(`cycle ${res.status}`);
     return res.json();
   },
+  translate: async (texts: string[]) => {
+    const res = await fetch(`${API}/translate`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ texts }),
+    });
+    if (!res.ok) throw new Error(`translate ${res.status}`);
+    const body = (await res.json()) as { texts?: string[] };
+    const out = Array.isArray(body.texts) ? body.texts : [];
+    return texts.map((t, i) => (typeof out[i] === "string" ? out[i] : t));
+  },
   review: async (alertId: string, human_label: string, reason = "") => {
     const res = await fetch(`${API}/alerts/${alertId}/review`, {
       method: "POST",

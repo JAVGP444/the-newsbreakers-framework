@@ -34,6 +34,7 @@ import {
 } from "./display";
 import { hydratePoint } from "./geoCentroids";
 import { isAllowlistedHttp, articleHref } from "./safeUrl";
+import { useTranslated } from "./translate";
 
 const OFFICIAL_HOST_LABEL: Record<string, string> = {
   "woah.org": "WOAH",
@@ -169,6 +170,10 @@ export default function AnalysisPage() {
   const clip = photos.find((im) => im.encoder) || photos[0];
 
   const officialSources = useMemo(() => uniqueOfficialSources(evidence), [evidence]);
+  const titleText = article?.title || "";
+  const summaryText = flowText(article?.text || article?.summary);
+  const lecturaText = flowText(article?.local_explanation || article?.llm_explanation);
+  const [tTitle, tSummary, tLectura] = useTranslated([titleText, summaryText, lecturaText]);
 
   async function review(label: "validado" | "descartado" | "modificado") {
     const alert = alerts[0];
@@ -193,7 +198,7 @@ export default function AnalysisPage() {
   return (
     <div className="shell analysis">
       <AppHeader
-        title={article?.title || (err ? "Artículo no encontrado" : "Cargando ficha…")}
+        title={tTitle || article?.title || (err ? "Artículo no encontrado" : "Cargando ficha…")}
         subtitle={article ? `${sourceName} · ${when}` : undefined}
       />
       {err && (
@@ -365,7 +370,7 @@ export default function AnalysisPage() {
                 </div>
               ) : null}
               <LeerMas maxLines={4} className="lede">
-                {flowText(article.text || article.summary) || "Sin texto en el cuerpo."}
+                {tSummary || "Sin texto en el cuerpo."}
               </LeerMas>
               {isAllowlistedHttp(article.url) ? (
                 <p>
@@ -383,7 +388,7 @@ export default function AnalysisPage() {
                 {claims.length ? ` · ${claims.length} afirmaciones` : " · sin afirmaciones"}
               </div>
               <LeerMas maxLines={4}>
-                {flowText(article.local_explanation || article.llm_explanation) || "Sin lectura del caso."}
+                {tLectura || "Sin lectura del caso."}
               </LeerMas>
             </section>
 

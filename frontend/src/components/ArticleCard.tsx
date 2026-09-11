@@ -15,17 +15,21 @@ import CardThumb from "./CardThumb";
 export default function ArticleCard({
   article,
   sourceName,
+  title: titleOverride,
+  summary: summaryOverride,
 }: {
   article: Article;
   sourceName?: string;
+  title?: string;
+  summary?: string;
 }) {
   const kind = sourceKind(article);
-  const summary = cardExcerpt(article.text, article.title);
+  const summary = summaryOverride ?? cardExcerpt(article.text, article.title);
   const when = formatDate(article.published_at || article.collected_at);
   const risk = article.risk_score;
   const name = displaySourceName(article, sourceName);
   const href = articleHref(article.content_id);
-  const title = article.title || article.url || article.content_id;
+  const title = titleOverride ?? (article.title || article.url || article.content_id);
 
   return (
     <article className="art-card">

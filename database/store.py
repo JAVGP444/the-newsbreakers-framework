@@ -198,6 +198,14 @@ CREATE TABLE IF NOT EXISTS cnn_samples (
 );
 CREATE INDEX IF NOT EXISTS idx_cnn_samples_class ON cnn_samples (class);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_cnn_samples_sha ON cnn_samples (sha256);
+
+CREATE TABLE IF NOT EXISTS translation_cache (
+  text_hash TEXT PRIMARY KEY,
+  source_text TEXT NOT NULL,
+  translated TEXT NOT NULL,
+  provider TEXT,
+  created_at TEXT
+);
 """
 
 
@@ -323,6 +331,26 @@ class Store:
         cur = self.conn.execute(sql, tuple(params))
         row = cur.fetchone()
         return dict(row) if row else None
+
+    def translation_hash(self, text: str) -> str:
+        return hashlib.sha256(f"en|es\n{text}".encode("utf-8")).hexdigest()
+
+    def get_translation(self, text: str) -> str | None:
+        row = self.fetchone(
+            "SELECT translated FROM translation_cache WHERE text_hash=?",
+            (self.translation_hash(text),),
+        )
+        return None if row is None else row.get("translated")
+
+    def put_translation(self, text: str, translated: str, provider: str) -> None:
+        self.execute(
+            """
+            INSERT OR REPLACE INTO translation_cache
+              (text_hash, source_text, translated, provider, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (self.translation_hash(text), text[:8000], translated, provider, _now()),
+        )
 
     # ── sources ────────────────────────────────────────────────────────────
     def upsert_source(self, source: dict[str, Any]) -> None:
