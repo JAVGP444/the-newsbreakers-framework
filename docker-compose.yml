@@ -64,19 +64,18 @@ services:
     profiles: ["gateway"]
     build:
       context: .
-      dockerfile: api/Dockerfile
+      dockerfile: Dockerfile
     environment:
-      POSTGRES_URL: postgresql://tnb:tnb@postgres:5432/tnb
-      MONGO_URL: mongodb://mongo:27017
-      MONGO_DB: tnb_raw
-      REDIS_URL: redis://redis:6379/0
-      LEGACY_API_URL: http://host.docker.internal:8000
+      TNB_DEMO_SEED: "0"
+      TNB_MYSQL: "0"
     ports:
       - "8010:8010"
-    depends_on:
-      - postgres
-      - mongo
-      - redis
+    volumes:
+      - ./data:/app/data
+      - ./storage:/app/storage
+      - ./models:/app/models
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   tnb_mysql:

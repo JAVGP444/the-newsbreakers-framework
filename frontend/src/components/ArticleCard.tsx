@@ -1,15 +1,14 @@
 import { Link } from "react-router-dom";
 import { verdictClass, type Article } from "../api";
-import LeerMas from "./LeerMas";
 import {
   cardExcerpt,
   displaySourceName,
-  formatDate,
+  formatPublishedAt,
   riskTone,
   sourceKind,
   verdictLabel,
 } from "../display";
-import { articleHref } from "../safeUrl";
+import { articleHref, isSafeExternalHttp } from "../safeUrl";
 import CardThumb from "./CardThumb";
 
 export default function ArticleCard({
@@ -25,7 +24,7 @@ export default function ArticleCard({
 }) {
   const kind = sourceKind(article);
   const summary = summaryOverride ?? cardExcerpt(article.text, article.title);
-  const when = formatDate(article.published_at || article.collected_at);
+  const when = formatPublishedAt(article.published_at);
   const risk = article.risk_score;
   const name = displaySourceName(article, sourceName);
   const href = articleHref(article.content_id);
@@ -46,15 +45,21 @@ export default function ArticleCard({
         <h2 className="art-title">
           <Link to={href}>{title}</Link>
         </h2>
-        {summary ? (
-          <LeerMas maxLines={3} className="art-summary">
-            {summary}
-          </LeerMas>
-        ) : null}
+        {summary ? <p className="art-summary">{summary}</p> : null}
         <p className="art-meta">
-          <span>{name}</span>
-          <span aria-hidden="true">·</span>
-          <time dateTime={article.published_at || article.collected_at || undefined}>{when}</time>
+          <span className="art-meta-src">{name}</span>
+          <time dateTime={article.published_at || undefined}>{when}</time>
+          {isSafeExternalHttp(article.url) ? (
+            <a
+              className="noticia"
+              href={article.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Original
+            </a>
+          ) : null}
         </p>
       </div>
     </article>

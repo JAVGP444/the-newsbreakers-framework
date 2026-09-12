@@ -1,165 +1,110 @@
-# The NewsBreakers — Framework (pipeline 24/7)
+# The NewsBreakers
 
-**Repositorio privado vigente:** https://github.com/JAVGP444/the-newsbreakers-framework
+<p align="center">
+  <img src="branding/logo.png" width="168" alt="The NewsBreakers">
+</p>
 
-Clona **este** repo (no `The-NewsBreakers`, que era la demo vieja FastAPI+Next.js en el puerto 3003).
+Observatorio de salud animal (gusano barrenador, gripe aviar, peste porcina).
 
-### Abrir en Mac
+Entras con correo y contraseña. Sin TNB1 ves **cuatro notas**. Con clave se abre la sala. Cada licencia vale en **3 equipos**.
 
-1. Entra en GitHub con una cuenta invitada al repo privado.
-2. En Terminal:
+## Instalador (lo que se entrega al cliente)
 
-```bash
-cd ~
+El `.exe` se construye **en Windows**. El `.app` se construye **en Mac**. No se cruza.
+
+### Windows (paso a paso, para que quede como en Mac)
+
+En el PC Windows, no en el Mac:
+
+1. Instala [Python 3.12](https://www.python.org/downloads/) y marca **Add python.exe to PATH**.
+2. Instala [Node.js LTS](https://nodejs.org/).
+3. Instala [Git](https://git-scm.com/download/win).
+4. Clona este repo en el Escritorio:
+
+```bat
+cd %USERPROFILE%\Desktop
 git clone https://github.com/JAVGP444/the-newsbreakers-framework.git
 cd the-newsbreakers-framework
-chmod +x mac/Instalar-y-abrir.command mac/detener.command mac/minar.command mac/minar-ya.command
 ```
 
-3. Doble clic en `mac/Instalar-y-abrir.command` (primera vez: clic derecho → Abrir).
-4. El observatorio es **http://127.0.0.1:5173/#/** (Vite). La API está en **8010**.
-5. Para parar: `mac/detener.command`.
-6. El `git pull` trae `data/processed/tnb.db` (~160 notas). Luego `mac/minar-ya.command` para crecer. Guía: [`mac/copiar-datos.md`](mac/copiar-datos.md).
+5. (Opcional, recomendado) Inno Setup 6: https://jrsoftware.org/isinfo.php — sale `NewsBreakers-Setup.exe`.
+6. Abre **cmd** en esa carpeta y corre:
 
-Guía completa: [`mac/README.md`](mac/README.md). Docker no hace falta para ver la UI.
-
----
-
-Sistema **ejecutable** de vigilancia multimodal en salud animal.
-
-Watchlist → Scheduler → Ingesta (API→RSS→scrape diferido) → Normalizar →
-Dedup → NLP + imágenes → Claims → Evidencia (no LLM-as-truth) → Riesgo →
-Alertas/SQLite → Dashboard.
-
-El producto vigente que se reutiliza (watchlist, diccionarios, Excel/HTML) es
-`C:\Users\javie\OneDrive\Escritorio\Generador_Excel_Enfermedades`
-(`TNB_DEMO_ROOT`). **No** es el verificador FastAPI+Next.js de `the-newsbreakers`.
-En Mac esa carpeta es **opcional**: la watchlist bundled (`config/watchlist.yaml` + `ingestion/sources/catalog.yaml`) basta para minar RSS/GDELT.
-
-**UI 24/7 de este framework:** http://127.0.0.1:5173 (Vite). El HTML
-`salida/urls_enfermedades_dashboard.html` es el observatorio Excel, no este dashboard.
-
-Auditoría (estado vs plan, P0/P1/P2): [`docs/AUDITORIA.md`](docs/AUDITORIA.md).
-
-## Demo completa (Windows)
-
-```
+```bat
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
-python run_cycle.py
-python -m uvicorn api.main:app --host 127.0.0.1 --port 8010
-```
-
-En otra terminal:
-
-```
+python -m pip install -U pip
+python -m pip install -r requirements.txt pyinstaller pywebview
 cd frontend
 npm install
-npm run dev
+set VITE_API_URL=
+npm run build
+cd ..
+python packaging/build.py
 ```
 
-| Servicio | Puerto |
-|----------|--------|
-| API FastAPI | **8010** |
-| Dashboard Vite | **5173** |
+7. Sale `dist\NewsBreakers\NewsBreakers.exe`. Ábrelo: ventana propia, no Chrome. Datos en `%APPDATA%\TheNewsBreakers` (como Application Support en Mac).
+8. Si instalaste Inno Setup:
 
-Abre http://127.0.0.1:5173
+```bat
+"%LocalAppData%\Programs\Inno Setup 6\ISCC.exe" packaging\windows\setup.iss
+```
 
-Opcional, minería continua (MySQL + SQLite):
+o abre `packaging\windows\setup.iss` con Inno y Compile. Sale `dist\NewsBreakers-Setup.exe`.
+
+9. Primera pantalla: **crear cuenta** (correo + contraseña). Si tienes TNB1, pégala ahí. Tope: 3 equipos por clave.
+10. Para que Mac y Windows compartan el tope de 3, el mismo archivo de asientos en OneDrive, en `.env` de ambos:
 
 ```
+TNB_SEATS_PATH=C:\Users\TU_USUARIO\OneDrive\TheNewsBreakers\accounts.sqlite
+```
+
+En Mac, el path de OneDrive equivalente.
+
+Sin ese path, cada máquina lleva su propio recuento.
+
+### macOS
+
+`python packaging/build.py` o el flujo nativo `packaging/mac` → `The-NewsBreakers.dmg`. Arrastra `NewsBreakers.app` a Aplicaciones.
+
+### Linux
+
+`python packaging/build.py` → `dist/NewsBreakers/` + `.desktop`.
+
+## Arranque desde carpeta (desarrollo)
+
+Python 3.12+ y Node 18+.
+
+| SO | Abrir | Parar |
+|----|--------|--------|
+| macOS | `mac/Instalar-y-abrir.command` | `mac/detener.command` |
+| Windows | `windows/abrir.bat` | `windows/detener.bat` |
+| Linux | `./linux/abrir.sh` | `./linux/detener.sh` |
+
+## Cuentas y licencia
+
+```bash
+python scripts/issue_license.py --who cliente@correo --days 365 --features mine,llm,ocr
+python scripts/list_accounts.py
+```
+
+El cliente crea cuenta e inicia sesión. TNB1 suelta Sala, minería 24/7, CNN y gráficos. Sin clave, `POST /cycle` responde 402. El cuarto equipo responde 409 (`cupo`); en un equipo activo se puede cerrar sesión y, si hace falta, el vendedor lista asientos con `list_accounts.py`.
+
+## Docker (opcional)
+
+```bash
 docker compose up -d mysql
-copy .env.example .env
-pip install pymysql
-python mine_loop.py
 ```
 
-Equivalente: `python run_cycle.py --loop --interval 1800`
+La UI no necesita MySQL. SQLite es el almacén que abre el dashboard.
 
-Si Docker no está, instala MySQL 8 local (`database newsbreakers`, user/password `tnb`/`tnb` como en `.env.example`). Sin MySQL el ciclo sigue en SQLite y registra `MySQL no conectado`.
+## Tests
 
-Si el puerto 3306 ya está ocupado (otro `mysqld`), publica el contenedor en 3307:
-
-```
-MYSQL_PORT=3307
-MYSQL_PUBLISH_PORT=3307
-docker compose up -d mysql
-```
-
-POST `/cycle` sigue activo. `GET /health` incluye `mysql` y `last_mine`.
-
-Reentrenar CNN (cuando haya fotos nuevas en `models/cnn/dataset/{clase}/`):
-
-```
-python -m ai_service.vision.train_cnn
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+python -m pytest tests -q
 ```
 
-No se reentrena solo en cada ciclo.
-
-Tests:
-
-```
-pytest tests -q
-```
-
-Docker (Postgres/Mongo/Redis) es **opcional**. El MVP corre con archivos locales:
-
-- `data/raw/` JSONL (RAW, Mongo más adelante)
-- `data/processed/tnb.db` SQLite (PROCESSED, fallback)
-- MySQL `newsbreakers` (warehouse; dual-write si está arriba)
-- `storage/images/{sha256}.{ext}` (object storage MVP)
-- `models/cnn/dataset/{clase}/` (fotos minadas para la CNN, conf ≥ 0.5)
-
-## Qué vas a VER
-
-1. **Terminal** (tras `python run_cycle.py`): resumen en español — fuentes revisadas, scrape diferido, artículos nuevos, imágenes, claims, alertas.
-2. **Dashboard** (`:5173`): KPIs, salud de fuentes, artículos con **riesgo + veredicto** (RESPALDADO / INSUFICIENTE / POSIBLEMENTE ENGAÑOSO / CONTRADICHO / REVISIÓN HUMANA — nunca fake/real), claims Supported/Contradicted/Unknown, tarjetas de imagen (tipo visual productivo, OCR, reuso pHash en %), pestaña **Revisión** HITL.
-3. **Análisis** de un artículo: título, fuente, riesgo, claims, evidencia viva, fusión visual (tipo + OCR + reuso + relevancia sanidad).
-4. Botón **Ejecutar ciclo** llama `POST /cycle` (si `TNB_API_TOKEN` está definido, envía `X-API-Token`).
-
-Por defecto **no** hay semilla demo (`TNB_DEMO_SEED=0`, `TNB_FAST=0`). Solo inyecta fixtures si pones `TNB_DEMO_SEED=1` o `--demo-seed`.
-
-## Minero 24/7 (Windows)
-
-El Programador de tareas sobrevive un reinicio. **El sleep/hibernación del PC sigue pausando el SO** (el task no despierta el equipo).
-
-```
-powershell -ExecutionPolicy Bypass -File scripts\instalar-minero.ps1
-```
-
-Quitar: `scripts\desinstalar-minero.ps1`
-
-Backup SQLite en cada ciclo: `data/backups/tnb-YYYYMMDD-HHMM.db` (últimas 7). Manual: `python backup_db.py`.
-
-La API debe escucharse solo en local:
-
-```
-python -m uvicorn api.main:app --host 127.0.0.1 --port 8010
-```
-
-## Seis funciones
-
-| Función | Dónde |
-|---------|--------|
-| Monitorear | `ingestion/source_catalog.py`, `scheduler.py` |
-| Recolectar | `rss_fetcher.py`, `api_fetcher.py`, `access.py` |
-| Comprender | `ai-service/nlp`, `ai-service/vision` |
-| Verificar | `evidence-service/retrieve.py`, `verification/nli.py` |
-| Narrativas | `ai-service/narratives/engine.py` (clusters por keyword) |
-| Alertar | `risk_engine.py` + tablas `alerts` / `reviews` |
-
-## Principios
-
-- Solo watchlist. No se scrapea “todo Internet”. Sin API ni RSS → log `scrape deferred`.
-- El LLM **no** cierra la verdad. NLI conservador: Unknown por defecto; Supported solo con overlap fuerte y fuente oficial.
-- Visión productiva: CLIP o ResNet18 ImageNet. CNN 8 clases = laboratorio académico (no métrica de producción si se entrenó en dibujos).
-- Cada predicción lleva `model_version`. Cada veredicto deja `audit_logs` (por qué).
-
-## Variable de entorno
-
-```
-$env:TNB_DEMO_ROOT = "C:\Users\javie\OneDrive\Escritorio\Generador_Excel_Enfermedades"
-```
-
-Por defecto ya apunta a esa carpeta hermana en el Escritorio.
+Briefing: [`docs/The-NewsBreakers-observatorio.pdf`](docs/The-NewsBreakers-observatorio.pdf).

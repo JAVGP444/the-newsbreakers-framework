@@ -122,6 +122,31 @@ def test_relevance_skip_threshold():
     long_pasta = "receta de pasta carbonara con albahaca y tomate " * 6
     assert should_skip(long_pasta, source=official)
 
+    # Substring falso: rabia (enfermedad) ≠ Arabia.
+    assert relevance_score("Saudi Arabia says East-West pipeline hit by drones") < 0.15
+    assert should_skip(
+        "Arabian peninsula shipping lanes and Red Sea trade",
+        title="Houthis seize key Yemeni island in Bab el-Mandeb, taking control of the strait",
+    )
+    assert not should_skip("brote de rabia bovina en ganado de Sonora")
+    figlia_body = "screwworm avian influenza H5N1 HPAI SENASICA WOAH related stories"
+    assert should_skip(
+        figlia_body,
+        title="Figlia , Brunswick East - The Age Good Food Guide review",
+    )
+    press = {"type": "GENERAL_MEDIA", "category": "media", "domain": "aljazeera.com"}
+    assert should_skip(
+        "Saudi Arabia and livestock trade in the Red Sea " + figlia_body,
+        source=press,
+        title="Iran war live: Houthis control Red Sea coast, Saudi pipeline shut down",
+    )
+    aggregator = {"type": "aggregator", "category": "media", "domain": "gdeltproject.org"}
+    assert should_skip(
+        figlia_body,
+        source=aggregator,
+        title="How Canadians are bracing for the impact of Trump's trade war",
+    )
+
 
 def test_bundled_diseases_and_watchlist_without_generador():
     from bootstrap import DISEASES_YAML, FRAMEWORK_ROOT, WATCHLIST_YAML
@@ -295,3 +320,174 @@ def test_risk_engine_verdicts_and_weights():
     human = risk_score({"low_confidence": True})
     assert human["verdict"] == "REVISIÓN HUMANA"
     assert "FAKE" not in high["verdict"] and "REAL" not in high["verdict"]
+    expl = high["why"]["explain"]
+    assert len(expl["rows"]) == 6
+    assert abs(sum(r["contrib"] for r in expl["rows"]) - expl["score"]) < 1
+    assert "×" in expl["formula"]
+
+
+def test_explain_claim_lists_overlap_gaps():
+    from nli import explain_claim
+
+    packed = explain_claim(
+        "Texas horse diagnosed with screwworm parasite first case of this century",
+        [
+            {
+                "url": "https://www.woah.org/en/disease/new-world-screwworm-cochliomyia-hominivorax/",
+                "snippet": "New World screwworm Cochliomyia hominivorax is a parasitic fly. WOAH lists the disease.",
+            }
+        ],
+    )
+    assert packed["label"] == "Unknown"
+    assert packed["items"]
+    assert packed["items"][0]["official"] is True
+    assert packed["items"][0]["overlap"] < 6
+    assert packed["why"]
+    assert "overlap" in packed["why"].lower() or "palabras" in packed["why"].lower() or "faltó" in packed["why"].lower()
+
+
+def test_collect_signals_uses_image_and_cross_cut():
+    from risk_engine import collect_signals, visual_anomaly_score
+
+    assert visual_anomaly_score("POTENTIALLY_MANIPULATED", 0.9) >= 70
+    assert visual_anomaly_score("PHOTOGRAPH", 0.9) < 20
+    split = collect_signals(
+        nli_label="Unknown",
+        source={"type": "GENERAL_MEDIA", "category": "media"},
+        claims=[{"pattern_type": "conspiracion", "predicate": "OCULTA", "verifiable": False}],
+        images=[{"cnn_class": "MEME", "cnn_confidence": 0.8, "reused": True}],
+        peers=[{"verdict": "RESPALDADO", "type": "OFFICIAL", "category": "official", "source_type": "OFFICIAL"}],
+        growth_pct=80,
+        relevance=0.4,
+    )
+    assert split["image_reuse"] >= 70
+    assert split["visual_anomaly"] >= 50
+    assert split["force_human_review"] is True
+    assert split["cross_cut"]["reason"] == "discrepa_oficial"
+    scored = risk_score(split)
+    assert scored["verdict"] == "REVISIÓN HUMANA"
+    assert scored["why"]["rule"] == "discrepancia"
+    assert "FAKE" not in scored["verdict"]
+
+
+def test_infer_authority_fills_official_and_media():
+    from risk_engine import infer_authority, source_unreliability
+
+    assert infer_authority({"type": "OFFICIAL", "domain": "woah.org", "authority": ""}) == "A"
+    assert infer_authority({"type": "NEWS", "category": "media", "authority": ""}) == "C"
+    assert source_unreliability({"type": "OFFICIAL", "domain": "gob.mx"}) <= 12
+    assert source_unreliability({"type": "OFFICIAL", "domain": "gob.mx"}, hitl_shift=10) > source_unreliability(
+        {"type": "OFFICIAL", "domain": "gob.mx"}
+    )
+
+
+def test_numeric_discrepancy_flags_wild_counts():
+    from risk_engine import collect_signals, extract_case_count, numeric_discrepancy
+
+    assert extract_case_count("SENASICA reporta 12 casos en Chiapas") == 12
+    gap = numeric_discrepancy(
+        [{"text": "Hay 247 casos de gusano barrenador en Chiapas"}],
+        [{"snippet": "El parte oficial registra 12 casos confirmados en Chiapas"}],
+    )
+    assert gap["reason"] == "cifra_parte"
+    scored = collect_signals(
+        nli_label="Unknown",
+        source={"type": "NEWS", "category": "media"},
+        claims=[{"text": "Hay 247 casos de gusano barrenador en Chiapas", "pattern_type": "cifra"}],
+        evidence=[{"snippet": "El parte oficial registra 12 casos confirmados en Chiapas"}],
+        relevance=0.4,
+    )
+    assert scored["force_human_review"] is True
+    assert scored["numeric"]["reason"] == "cifra_parte"
+    assert "FAKE" not in risk_score(scored)["verdict"]
+
+
+def test_short_title_still_extracts_a_claim():
+    from claims import extract_claims
+
+    packed = extract_claims("SENASICA confirma brote de gusano barrenador en Chiapas", ["gusano_barrenador"])
+    assert packed["claims"]
+    assert "barrenador" in (packed["claims"][0].get("text") or "").lower()
+
+
+def test_hitl_validado_rewrites_article_verdict(tmp_path, monkeypatch):
+    from database.store import Store
+
+    monkeypatch.setattr("database.store.DB_PATH", tmp_path / "tnb.db")
+    store = Store(tmp_path / "tnb.db")
+    cid = "CNT-hitl1"
+    store.insert_article(
+        {
+            "content_id": cid,
+            "source_id": "SRC001",
+            "url": "https://example.org/a",
+            "url_sha256": "abc",
+            "title": "Brote",
+            "text": "cuerpo",
+            "collected_at": "2026-09-12T00:00:00+00:00",
+            "verdict": "REVISIÓN HUMANA",
+            "risk_score": 70,
+            "model_versions": {},
+        }
+    )
+    store.insert_alert(
+        {
+            "alert_id": "AL-hitl1",
+            "content_id": cid,
+            "risk_score": 70,
+            "verdict": "REVISIÓN HUMANA",
+            "status": "pending_review",
+            "model_name": "risk_engine",
+            "model_version": "weighted_v3",
+        }
+    )
+    store.review_alert("AL-hitl1", human_label="validado", reason="cuadra con SENASICA")
+    art = store.get_article(cid)
+    assert art["verdict"] == "RESPALDADO"
+    assert int(art["risk_score"]) == 22
+    closed = store.fetchone("SELECT status FROM alerts WHERE alert_id=?", ("AL-hitl1",))
+    assert closed["status"] == "reviewed"
+    store.insert_alert(
+        {
+            "alert_id": "AL-hitl2",
+            "content_id": cid,
+            "risk_score": 70,
+            "verdict": "POSIBLEMENTE ENGAÑOSO",
+            "status": "pending_review",
+            "model_name": "risk_engine",
+            "model_version": "weighted_v3",
+        }
+    )
+    store.review_alert("AL-hitl2", human_label="modificado", reason="falta municipio")
+    still = store.fetchone("SELECT status, human_reason FROM alerts WHERE alert_id=?", ("AL-hitl2",))
+    assert still["status"] == "pending_review"
+    assert "municipio" in (still.get("human_reason") or "")
+    store.close()
+
+
+def test_review_article_without_pending_alert(tmp_path, monkeypatch):
+    from database.store import Store
+
+    monkeypatch.setattr("database.store.DB_PATH", tmp_path / "tnb.db")
+    store = Store(tmp_path / "tnb.db")
+    cid = "CNT-hitl-direct"
+    store.insert_article(
+        {
+            "content_id": cid,
+            "source_id": "SRC001",
+            "url": "https://www.gob.mx/direct",
+            "url_sha256": "direct",
+            "title": "Brote",
+            "text": "cuerpo",
+            "collected_at": "2026-09-12T00:00:00+00:00",
+            "verdict": "REVISIÓN HUMANA",
+            "risk_score": 70,
+            "model_versions": {},
+        }
+    )
+    row = store.review_article(cid, human_label="validado", reason="cuadra")
+    assert row
+    art = store.get_article(cid)
+    assert art["verdict"] == "RESPALDADO"
+    assert int(art["risk_score"]) == 22
+    store.close()

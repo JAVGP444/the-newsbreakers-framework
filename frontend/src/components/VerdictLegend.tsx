@@ -55,15 +55,22 @@ export default function VerdictLegend() {
 
   return (
     <div className={`verdict-legend${open ? " open" : ""}`}>
-      <button
-        type="button"
-        className="verdict-legend-toggle"
-        aria-expanded={open}
-        aria-controls="verdict-legend-list"
-        onClick={toggle}
-      >
-        ¿Qué significan estos estados?
-      </button>
+      <div className="verdict-legend-bar">
+        {STATES.map((s) => (
+          <span key={s.label} className={`legend-chip ${s.tone}`} title={s.text}>
+            {s.label}
+          </span>
+        ))}
+        <button
+          type="button"
+          className="verdict-legend-toggle"
+          aria-expanded={open}
+          aria-controls="verdict-legend-list"
+          onClick={toggle}
+        >
+          {open ? "Ocultar" : "Qué es cada uno"}
+        </button>
+      </div>
       {open ? (
         <ul id="verdict-legend-list" className="verdict-legend-list">
           {STATES.map((s) => (

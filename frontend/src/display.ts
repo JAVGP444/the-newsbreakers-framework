@@ -117,15 +117,16 @@ export function sourceKind(article: Article): SourceKind {
 }
 
 export function displaySourceName(article: Article, mapped?: string | null): string {
-  if (mapped && !mapped.startsWith("SRC-")) return mapped;
   const raw = (article.url || "").trim();
   if (raw.startsWith("http://") || raw.startsWith("https://")) {
     try {
-      return new URL(raw).hostname.replace(/^www\./, "");
+      const host = new URL(raw).hostname.replace(/^www\./, "");
+      if (host && !host.includes("gdeltproject.org")) return host;
     } catch {
       /* ignore */
     }
   }
+  if (mapped && !mapped.startsWith("SRC-")) return mapped;
   const st = (article.source_type || "").trim();
   if (st && !/^src-/i.test(st)) return st;
   return mapped || article.source_id || "Fuente";
@@ -140,30 +141,179 @@ export const KIND_LABEL: Record<SourceKind, string> = {
 };
 
 export function twoLineSummary(text?: string | null, title?: string | null): string {
-  const raw = (text || "").replace(/\s+/g, " ").trim();
-  if (!raw || raw === (title || "").trim()) return "";
-  return raw.length > 220 ? `${raw.slice(0, 217)}…` : raw;
+  return cardExcerpt(text, title, 160);
 }
 
-/** Longer excerpt for sala cards; visual clamp + Leer más hide the rest. */
-export function cardExcerpt(text?: string | null, title?: string | null, max = 560): string {
-  const raw = (text || "").replace(/\s+/g, " ").trim();
-  if (!raw || raw === (title || "").trim()) return "";
+const GDELT_NOISE =
+  /\b(avian influenza|h5n1|hpai|screwworm|senasica|woah|classical swine fever|gusano barrenador|gripe aviar)\b/gi;
+
+/** Recorte corto para sala. Tira título repetido y el relleno de GDELT. */
+export function cardExcerpt(text?: string | null, title?: string | null, max = 180): string {
+  let raw = (text || "").replace(/\s+/g, " ").trim();
+  const t = (title || "").replace(/\s+/g, " ").trim();
+  if (!raw) return "";
+  if (t && raw.toLowerCase().startsWith(t.toLowerCase())) {
+    raw = raw.slice(t.length).replace(/^[\s.:;,—-]+/, "");
+  }
+  raw = raw.replace(/^«[^»]+»\s*(es un documento[^.]*\.)?\s*/i, "");
+  raw = raw.replace(/\b\d{8}T\d+\S*/g, " ").replace(GDELT_NOISE, " ");
+  raw = raw.replace(/\b[\w.-]+\.(com|org|net|gov|edu|mx)\b/gi, " ");
+  raw = raw.replace(/\s+/g, " ").trim();
+  if (!raw || raw.toLowerCase() === t.toLowerCase()) return "";
+  if (raw.length < 48) return "";
   return raw.length > max ? `${raw.slice(0, max - 1)}…` : raw;
+}
+
+export function articleLede(text?: string | null, title?: string | null): string {
+  return cardExcerpt(text, title, 320);
 }
 
 export function flowText(text?: string | null): string {
   return (text || "").replace(/\s+/g, " ").trim();
 }
 
+export function displayClaim(text?: string | null, title?: string | null): string {
+  const leftover = cardExcerpt(text, title, 280);
+  if (leftover) return leftover;
+  const t = (title || "").replace(/\s+/g, " ").trim();
+  return t || flowText(text);
+}
+
+export function riskHeadline(why?: Article["risk_why"] | null, score?: number | null): string {
+  const rule = riskRuleLabel(why?.rule);
+  if (rule) return `${rule}.`;
+  const rows = why?.explain?.rows || [];
+  const top = [...rows].sort((a, b) => Number(b.contrib) - Number(a.contrib))[0];
+  if (top && Number(top.contrib) > 0) {
+    return `Lo que más pesa: ${String(top.label || "").toLowerCase()}.`;
+  }
+  if (score != null) return `Riesgo ${score}/100 según seis señales.`;
+  return "";
+}
+
 export function formatDate(iso?: string | null): string {
   if (!iso) return "Sin fecha";
+  const raw = iso.trim().replace(/Z$/i, "");
+  const compact = raw.match(/^(\d{4})(\d{2})(\d{2})(?:T\d*)?/);
+  if (compact) {
+    const d = new Date(`${compact[1]}-${compact[2]}-${compact[3]}T12:00:00`);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
+    }
+  }
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) {
     const cut = iso.slice(0, 10);
-    return cut || "Sin fecha";
+    return cut.includes("-") ? cut : "Sin fecha";
   }
   return d.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
+}
+
+export function formatPublishedAt(published?: string | null): string {
+  const raw = (published || "").trim();
+  if (!raw) return "Sin fecha de publicación";
+  return formatDate(raw);
+}
+
+const PART_LABELS: Record<string, string> = {
+  evidence_contradiction: "discrepancia con evidencia oficial",
+  source_reliability: "fiabilidad de la fuente",
+  image_reuse: "imagen reusada",
+  claim_severity: "gravedad de la afirmación",
+  narrative_growth: "narrativa en crecimiento",
+  visual_anomaly: "anomalía visual",
+};
+
+const IMAGE_CLASS_ES: Record<string, string> = {
+  OFFICIAL_DOCUMENT: "documento oficial",
+  NEWS_SCREENSHOT: "captura de noticia",
+  SOCIAL_MEDIA: "captura de red social",
+  MEME: "meme",
+  INFOGRAPHIC: "infografía",
+  ANIMAL_HEALTH_CONTENT: "imagen de enfermedad animal",
+  PHOTOGRAPH: "fotografía",
+  POTENTIALLY_MANIPULATED: "posible manipulación",
+};
+
+function encoderWhy(encoder?: string | null): string {
+  const enc = (encoder || "").toLowerCase();
+  if (enc.includes("clip")) return "CLIP compara la foto con 8 descripciones de tipo de imagen";
+  if (enc.includes("resnet")) return "ResNet (ImageNet) asigna un tipo visual";
+  if (enc.includes("url")) return "una heurística por el dominio de la URL, sin mirar los píxeles";
+  if (enc.includes("academic")) return "la CNN académica experimental (dibujos 64×64)";
+  return "el clasificador de imagen";
+}
+
+export function riskWhyText(
+  why?: Article["risk_why"] | null,
+  score?: number | null,
+): string {
+  const n = why?.score ?? score;
+  if (n == null && !why) return "";
+  const named =
+    why?.parts_named && why.parts_named.length
+      ? why.parts_named
+      : Object.entries(why?.parts || {}).map(([id, value]) => ({
+          id,
+          label: PART_LABELS[id] || id,
+          value,
+        }));
+  const top = [...named]
+    .filter((p) => Number(p.value) >= 8)
+    .sort((a, b) => Number(b.value) - Number(a.value))
+    .slice(0, 3);
+  const bits: string[] = [];
+  if (n != null) {
+    bits.push(
+      `Riesgo ${n}/100: no es un % de que la noticia sea falsa. Es la suma ponderada de seis señales (evidencia, fuente, reuso de imagen, gravedad, narrativa y visual).`,
+    );
+  }
+  if (top.length) {
+    bits.push(
+      `Lo que más sube el número: ${top
+        .map((p) => `${(PART_LABELS[p.id] || p.label || p.id).toLowerCase()} (${Math.round(Number(p.value))})`)
+        .join(", ")}.`,
+    );
+  }
+  const rule = riskRuleLabel(why?.rule);
+  if (rule) bits.push(rule + ".");
+  if (why?.hitl?.label) {
+    bits.push(`Un analista lo marcó como ${why.hitl.label}${why.hitl.reason ? ` (${why.hitl.reason})` : ""}.`);
+  }
+  return bits.join(" ");
+}
+
+export function cnnConfidenceWhy(image: {
+  cnn_class?: string | null;
+  cnn_confidence?: number | null;
+  cnn_scores?: Record<string, number> | null;
+  encoder?: string | null;
+}): string {
+  if (image.cnn_confidence == null && !image.cnn_class) return "";
+  const pct = Math.round(Number(image.cnn_confidence || 0) * 100);
+  const klass = IMAGE_CLASS_ES[image.cnn_class || ""] || (image.cnn_class || "sin clase").toLowerCase();
+  const ranked = Object.entries(image.cnn_scores || {}).sort((a, b) => b[1] - a[1]);
+  const second = ranked[1];
+  const bits = [
+    `Confianza ${pct}% en «${klass}»: ${encoderWhy(image.encoder)} y reparte 100 puntos entre 8 tipos; esta clase se quedó ${pct}.`,
+  ];
+  if (second) {
+    const sp = Math.round(second[1] * 100);
+    const sl = IMAGE_CLASS_ES[second[0]] || second[0].toLowerCase();
+    const gap = pct - sp;
+    bits.push(`La segunda fue «${sl}» (${sp}%).`);
+    if (gap >= 40) bits.push("El margen es amplio, el tipo de imagen está bastante claro.");
+    else if (gap <= 12) bits.push("El margen es estrecho: otra clase casi empata.");
+  }
+  bits.push("Ese % no dice si el hecho es verdadero.");
+  return bits.join(" ");
+}
+
+export function claimConfidenceWhy(confidence?: number | null, nli?: string | null): string {
+  if (confidence == null) return "";
+  const pct = Math.round(Number(confidence) * 100);
+  const stance = stanceLabel(nli).toLowerCase();
+  return `Confianza ${pct}% en la postura «${stance}»: sale del cruce léxico de la afirmación con fichas oficiales (WOAH, SENASICA, etc.). No es un detector de fake news.`;
 }
 
 export function verdictLabel(v?: string | null): string {
@@ -177,6 +327,25 @@ export function verdictLabel(v?: string | null): string {
   if (up.includes("HUMANA") || up.includes("REVISION") || up.includes("REVIEW")) return "Revisión humana";
   if (up.includes("UNKNOWN") || up === "SIN VERIFICAR") return "Sin verificar";
   return x;
+}
+
+export function riskRuleLabel(rule?: string | null): string {
+  const map: Record<string, string> = {
+    discrepancia: "Las fuentes del mismo brote no coinciden",
+    baja_confianza: "Relevante, pero sin evidencia suficiente",
+    human: "Pasa a revisión humana",
+    nli_contradicted: "Choca con la ficha oficial",
+    score_high: "Riesgo alto por varias señales",
+    supported_low_risk: "Coincide con evidencia oficial y riesgo bajo",
+    score_mid: "Señales mixtas; no se da por bueno",
+    insufficient_evidence: "No hay bastante para respaldar ni contradecir",
+    cifra_parte: "La cifra no cuadra con el parte oficial",
+    cifra_difiere: "La cifra difiere del parte oficial",
+    hitl_validado: "Un analista lo validó",
+    hitl_descartado: "Un analista lo descartó",
+    hitl_modificado: "Un analista pidió corrección; sigue en revisión",
+  };
+  return map[rule || ""] || "";
 }
 
 export function stanceLabel(v?: string | null): string {

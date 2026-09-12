@@ -81,6 +81,10 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:8010",
+        "http://127.0.0.1:8010",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -94,12 +98,48 @@ def _api_token() -> str:
     return (os.environ.get("TNB_API_TOKEN") or "").strip()
 
 
+def _license_status() -> dict[str, Any]:
+    from config.license import public_status
+
+    return public_status()
+
+
+class LicenseIn(BaseModel):
+    key: str = ""
+
+
+class AuthIn(BaseModel):
+    email: str = ""
+    password: str = ""
+    key: str = ""
+    device_id: str = ""
+    device_name: str = ""
+
+
+class DeviceIn(BaseModel):
+    device_id: str = ""
+    device_name: str = ""
+
+
+def _session_token(request: Request) -> str:
+    return (request.headers.get("X-TNB-Session") or request.headers.get("x-tnb-session") or "").strip()
+
+
+def _need_session(request: Request) -> dict:
+    from config.accounts import session_user
+
+    user = session_user(_session_token(request))
+    if not user or not user.get("ok"):
+        raise HTTPException(status_code=401, detail="need_login")
+    return user
+
+
 @app.middleware("http")
 async def require_api_token(request: Request, call_next):
     token = _api_token()
     if token and request.method == "POST":
         path = request.url.path.rstrip("/") or "/"
-        protected = path == "/cycle" or path == "/cnn/predict" or path.endswith("/review")
+        protected = path == "/cycle" or path == "/cnn/predict"
         if protected:
             got = request.headers.get("X-API-Token") or request.headers.get("x-api-token") or ""
             if got != token:
@@ -117,6 +157,13 @@ class TranslateIn(BaseModel):
     texts: list[str] = []
 
 
+def _need_license() -> None:
+    from config.license import is_licensed
+
+    if not is_licensed():
+        raise HTTPException(status_code=402, detail="need_license")
+
+
 def _store() -> Store:
     return Store()
 
@@ -132,6 +179,111 @@ def _backfill_thumb_ids(content_ids: list[str]) -> None:
                 ensure_article_thumb(store, row)
     finally:
         store.close()
+
+
+@app.get("/license")
+def license_get():
+    return _license_status()
+
+
+@app.post("/license")
+def license_activate(body: LicenseIn, request: Request):
+    from config.accounts import bind_license, session_user
+    from config.license import normalize_key, save_key
+
+    key = normalize_key(body.key or "")
+    if not key.startswith("TNB1.") or len(key) > 800:
+        raise HTTPException(status_code=400, detail="clave inválida")
+    user = session_user(_session_token(request))
+    device = (request.headers.get("X-TNB-Device") or "").strip()
+    if user and user.get("email") and device:
+        out = bind_license(user["email"], key, device, request.headers.get("X-TNB-Device-Name") or "")
+        if not out.get("ok"):
+            detail = out.get("reason") or "clave inválida"
+            code = 409 if detail == "cupo" else 400
+            raise HTTPException(status_code=code, detail=detail)
+        return {**_license_status(), "account": out}
+    info = save_key(key)
+    if not info.get("ok"):
+        raise HTTPException(status_code=400, detail=info.get("reason") or "clave inválida")
+    return _license_status()
+
+
+@app.post("/auth/register")
+def auth_register(body: AuthIn):
+    from config.accounts import register
+
+    out = register(
+        body.email,
+        body.password,
+        license_key=body.key,
+        device_id=body.device_id,
+        device_name=body.device_name,
+    )
+    if not out.get("ok"):
+        reason = out.get("reason") or "error"
+        code = 409 if reason in {"existe", "cupo"} else 400
+        raise HTTPException(status_code=code, detail=reason)
+    return out
+
+
+@app.post("/auth/login")
+def auth_login(body: AuthIn):
+    from config.accounts import login
+
+    out = login(
+        body.email,
+        body.password,
+        device_id=body.device_id,
+        device_name=body.device_name,
+        license_key=body.key,
+    )
+    if not out.get("ok"):
+        reason = out.get("reason") or "error"
+        code = 409 if reason == "cupo" else 401 if reason == "credenciales" else 400
+        raise HTTPException(status_code=code, detail=reason)
+    return out
+
+
+@app.post("/auth/logout")
+def auth_logout(request: Request):
+    from config.accounts import logout
+
+    logout(_session_token(request))
+    return {"ok": True}
+
+
+@app.get("/auth/me")
+def auth_me(request: Request):
+    return _need_session(request)
+
+
+@app.get("/auth/devices")
+def auth_devices(request: Request):
+    user = _need_session(request)
+    return {"ok": True, "devices": user.get("devices") or [], "max": user.get("device_max"), "n": user.get("device_n")}
+
+
+@app.post("/auth/devices/revoke")
+def auth_revoke(body: DeviceIn, request: Request):
+    from config.accounts import revoke_device
+
+    user = _need_session(request)
+    out = revoke_device(user["email"], body.device_id)
+    if not out.get("ok"):
+        raise HTTPException(status_code=400, detail=out.get("reason") or "error")
+    return out
+
+
+@app.get("/auth/admin/accounts")
+def auth_admin(request: Request):
+    from config.accounts import admin_accounts
+
+    token = request.headers.get("X-TNB-Seller") or request.query_params.get("token") or ""
+    out = admin_accounts(token)
+    if not out.get("ok"):
+        raise HTTPException(status_code=401, detail="seller")
+    return out
 
 
 @app.get("/health")
@@ -166,6 +318,7 @@ def health():
         "redis": bool(os.getenv("REDIS_URL")),
         "llm_does_not_decide_truth": True,
         "queues": list(QUEUES),
+        "license": _license_status(),
     }
 
 
@@ -236,6 +389,10 @@ def articles(
     )
     payload = store.paged_articles(query)
     rows = payload["articles"]
+    from config.license import PREVIEW_N, is_licensed
+
+    if not is_licensed():
+        rows = rows[:PREVIEW_N]
     if thumb_limit > 0:
         batch = rows if backfill_all else rows[:thumb_limit]
         ids = [str(r.get("content_id") or "") for r in batch if r.get("content_id")]
@@ -245,11 +402,26 @@ def articles(
     for row in rows:
         fresh = store.public_row(row) or row
         fresh["disease_list"] = store.article_diseases(fresh)
+        mv = fresh.get("model_versions")
+        if isinstance(mv, str):
+            try:
+                mv = json.loads(mv)
+            except json.JSONDecodeError:
+                mv = {}
+        why = mv.get("risk_why") if isinstance(mv, dict) else None
+        if isinstance(why, dict):
+            fresh["risk_why"] = {
+                "rule": why.get("rule"),
+                "score": why.get("score"),
+                "parts": why.get("parts"),
+                "parts_named": why.get("parts_named") or [],
+            }
         out.append(fresh)
     return {
-        "count": payload["count"],
-        "page": payload["page"],
-        "page_size": payload["page_size"],
+        "count": len(out) if not is_licensed() else payload["count"],
+        "page": 1 if not is_licensed() else payload["page"],
+        "page_size": PREVIEW_N if not is_licensed() else payload["page_size"],
+        "preview": not is_licensed(),
         "articles": out,
     }
 
@@ -304,6 +476,35 @@ def article_detail(content_id: str):
     geo = country_info(resolve_article_country(row, extra))
     timeline = article_timeline(row)
     row = dict(store.public_row(row) or row)
+    mv = row.get("model_versions")
+    if isinstance(mv, str):
+        try:
+            mv = json.loads(mv)
+        except json.JSONDecodeError:
+            mv = {}
+    row["model_versions"] = mv if isinstance(mv, dict) else {}
+    row["risk_why"] = (row["model_versions"] or {}).get("risk_why")
+    from risk_engine import decorate_risk_why
+
+    row["risk_why"] = decorate_risk_why(
+        row["risk_why"] if isinstance(row["risk_why"], dict) else {},
+        source=store.get_source(row.get("source_id") or ""),
+        claims=claims,
+        images=images,
+        evidence=evidence,
+        article=row,
+    )
+    from nli import explain_claim
+
+    claims_out = []
+    by_claim = {}
+    for ev in evidence:
+        by_claim.setdefault(ev.get("claim_id"), []).append(ev)
+    for claim in claims:
+        item = dict(claim)
+        item["nli_explain"] = explain_claim(claim, by_claim.get(claim.get("claim_id") or "", []))
+        claims_out.append(item)
+    claims = claims_out
     row["disease_list"] = store.article_diseases(row)
     row["local_explanation"] = local_text
     row["summary"] = (row.get("text") or "")[:420]
@@ -324,7 +525,7 @@ def article_detail(content_id: str):
         "graph": compact_graph(row, similar, store),
         "quality": quality,
         "audit": store.list_audit(content_id, limit=50),
-        "alerts": [a for a in store.list_alerts() if a.get("content_id") == content_id],
+        "alerts": store.alerts_for_article(content_id),
     }
 
 
@@ -614,15 +815,36 @@ def translate(payload: TranslateIn):
 
 @app.post("/alerts/{alert_id}/review")
 def review_alert(alert_id: str, payload: ReviewIn):
-    row = _store().review_alert(
-        alert_id,
-        human_label=payload.human_label,
-        reason=payload.reason,
-        analyst=payload.analyst,
-    )
+    try:
+        row = _store().review_alert(
+            alert_id,
+            human_label=payload.human_label,
+            reason=payload.reason,
+            analyst=payload.analyst,
+        )
+    except Exception as exec_err:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exec_err)[:240]) from exec_err
     if not row:
         raise HTTPException(404, "alert not found")
     return {"ok": True, "alert": row}
+
+
+@app.post("/articles/{content_id}/review")
+def review_article(content_id: str, payload: ReviewIn):
+    store = _store()
+    try:
+        row = store.review_article(
+            content_id,
+            human_label=payload.human_label,
+            reason=payload.reason,
+            analyst=payload.analyst,
+        )
+    except Exception as exec_err:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exec_err)[:240]) from exec_err
+    if not row:
+        raise HTTPException(404, "article not found")
+    art = store.get_article(content_id) or {}
+    return {"ok": True, "alert": row, "article": store.public_row(art) or art}
 
 
 @app.post("/cycle")
@@ -631,6 +853,7 @@ def cycle(
     demo_seed: bool = False,
     force_due: bool = False,
 ):
+    _need_license()
     n = MAX_SOURCES if max_sources is None else max_sources
     return run_cycle(max_sources=n, demo_seed=demo_seed, force_due=force_due)
 
@@ -778,6 +1001,7 @@ async def cnn_predict(
         path = tmp.name
     else:
         raise HTTPException(400, "file or sample_id required")
+    _need_license()
     try:
         return _predict_path(path, url=page_url)
     finally:
@@ -789,24 +1013,34 @@ async def cnn_predict(
 
 
 def _load_env() -> None:
-    path = FW / ".env"
-    if not path.is_file():
-        return
-    try:
-        for raw in path.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            if key and key not in os.environ:
-                os.environ[key] = value
-    except OSError:
-        return
+    from config.paths import app_home
+
+    for path in (app_home() / ".env", FW / ".env"):
+        if not path.is_file():
+            continue
+        try:
+            for raw in path.read_text(encoding="utf-8").splitlines():
+                line = raw.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+        except OSError:
+            continue
 
 
 _load_env()
+
+from config.paths import app_home, bundle_root  # noqa: E402
+
+_UI = app_home() / "frontend" / "dist"
+if not _UI.is_dir():
+    _UI = bundle_root() / "frontend" / "dist"
+if _UI.is_dir():
+    app.mount("/", StaticFiles(directory=str(_UI), html=True), name="ui")
 
 
 if __name__ == "__main__":

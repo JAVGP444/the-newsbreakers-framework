@@ -53,6 +53,24 @@ export function isAllowlistedHttp(url?: string | null): boolean {
   return ALLOWED_SUFFIXES.some((d) => host === d || host.endsWith(`.${d}`));
 }
 
+/** Any real http(s) news URL the analyst can open in a new tab. */
+export function isSafeExternalHttp(url?: string | null): boolean {
+  const raw = (url || "").trim();
+  if (!raw) return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
+  if (!host || BLOCKED.has(host)) return false;
+  if (host.endsWith(".example.com") || host.endsWith(".example.invalid")) return false;
+  if (host === "localhost" || host.endsWith(".local")) return false;
+  return true;
+}
+
 export function articleHref(contentId: string): string {
   return `/article/${encodeURIComponent(String(contentId || "").trim())}`;
 }

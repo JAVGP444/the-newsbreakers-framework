@@ -28,7 +28,7 @@ chmod +x mac/Instalar-y-abrir.command mac/detener.command mac/minar.command mac/
 ```
 
 4. Primera vez (Gatekeeper): clic derecho en `mac/Instalar-y-abrir.command` → **Abrir** → confirmar. O en Terminal: `./mac/Instalar-y-abrir.command`.
-5. Cuando termine, abre **http://127.0.0.1:5173/#/** (no uses `:3003`). Para parar: doble clic en `mac/detener.command`.
+5. Cuando termine, se abre una ventana de app (sin pestañas). Para parar: doble clic en `mac/detener.command`.
 
 Tras `git pull`, SQLite incluye ~160 notas. Recarga http://127.0.0.1:5173/#/. Para crecer esta noche: `mac/minar-ya.command` (varios ciclos, logs visibles). Guía: [`copiar-datos.md`](copiar-datos.md). El sleep del Mac pausa `minar.command`.
 

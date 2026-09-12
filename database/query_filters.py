@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 
@@ -53,7 +55,7 @@ class ArticleQuery:
     risk_null: bool = False
     page: int = 1
     page_size: int = 12
-    order: str = "collected_at"
+    order: str = "published_at"
 
     def as_filter_dict(self) -> dict[str, Any]:
         return {
@@ -220,30 +222,57 @@ def parse_article_query(
         risk_null=_bool(risk_null),
         page=page_n,
         page_size=size,
-        order=(order or "collected_at").strip() or "collected_at",
+        order=(order or "published_at").strip() or "published_at",
     )
 
 
-def article_day(row: dict[str, Any]) -> str:
-    raw = str(row.get("published_at") or row.get("collected_at") or "").strip()
-    if not raw:
-        return ""
-    if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
-        return raw[:10]
-    try:
-        from email.utils import parsedate_to_datetime
+def parse_article_datetime(raw: Any) -> datetime | None:
+    text = str(raw or "").strip()
+    if not text or text.lower() in {"none", "null", "undefined"}:
+        return None
 
-        dt = parsedate_to_datetime(raw)
+    def _utc(dt: datetime) -> datetime:
+        if dt.tzinfo:
+            return dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt
+
+    if len(text) >= 8 and text[:8].isdigit() and (len(text) == 8 or text[8] == "T"):
+        try:
+            return datetime(int(text[:4]), int(text[4:6]), int(text[6:8]))
+        except ValueError:
+            pass
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        try:
+            return _utc(datetime.fromisoformat(text.replace("Z", "+00:00")))
+        except ValueError:
+            try:
+                return datetime.fromisoformat(text[:19])
+            except ValueError:
+                pass
+    try:
+        dt = parsedate_to_datetime(text)
         if dt:
-            return dt.date().isoformat()
-    except Exception:
+            return _utc(dt)
+    except (TypeError, ValueError, OverflowError):
         pass
     try:
-        from datetime import datetime
+        return _utc(datetime.fromisoformat(text.replace("Z", "+00:00")))
+    except ValueError:
+        return None
 
-        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date().isoformat()
-    except Exception:
-        return ""
+
+def article_day(row: dict[str, Any]) -> str:
+    dt = parse_article_datetime(row.get("published_at")) or parse_article_datetime(row.get("collected_at"))
+    return dt.date().isoformat() if dt else ""
+
+
+def published_sort_key(row: dict[str, Any]) -> tuple[int, str]:
+    """Orden DESC: primero las que tienen fecha de publicación, luego las demás."""
+    pub = parse_article_datetime(row.get("published_at"))
+    if pub:
+        return (1, pub.isoformat())
+    col = parse_article_datetime(row.get("collected_at"))
+    return (0, col.isoformat() if col else "")
 
 
 def verdict_matches(value: str | None, needle: str | None) -> bool:

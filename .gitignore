@@ -40,21 +40,22 @@ data/raw/*
 *.db-shm
 !data/processed/tnb.db
 
-# Media / training dumps (track a small thumb set; skip cnn_synth)
+# Runtime dumps. Keep the folder; do not commit mined photos.
 storage/images/*
 !storage/images/.gitkeep
-!storage/images/*.png
-!storage/images/*.jpg
-!storage/images/*.jpeg
-!storage/images/*.svg
-!storage/images/*.webp
-!storage/images/*.gif
 models/cnn/dataset/**/*.jpg
 models/cnn/dataset/**/*.jpeg
 models/cnn/dataset/**/*.png
 models/cnn/dataset/**/*.webp
 models/cnn/dataset/**/*.bmp
+models/cnn/dataset/**/*.gif
 !models/cnn/dataset/**/.gitkeep
+
+# Licencias vendidas (archivo local; no subir)
+license.key
+data/license.key
+data/accounts.sqlite
+data/accounts.sqlite-*
 
 # Logs / OS / zip copies
 *.log

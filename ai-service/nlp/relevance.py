@@ -7,6 +7,7 @@ si hay una señal débil de sanidad animal — no hace falta TNB_DEMO_ROOT.
 """
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -43,7 +44,6 @@ WATCHLIST_KEEP_TYPES = {
     "epidemiological",
     "genomic",
     "surveillance",
-    "aggregator",
 }
 WATCHLIST_KEEP_CATEGORIES = {
     "official",
@@ -124,12 +124,31 @@ def _load_keywords() -> tuple[list[str], dict[str, str]]:
 
 TOPIC_KEYWORDS, DISEASE_MAP = _load_keywords()
 
+# Palabra completa: "rabia" no debe matchear "Arabia" / "Arabian".
+_KEYWORD_RE: dict[str, re.Pattern[str]] = {}
+
+
+def _contains_kw(text_lower: str, keyword: str) -> bool:
+    kw = (keyword or "").lower().strip()
+    if not kw or not text_lower:
+        return False
+    pat = _KEYWORD_RE.get(kw)
+    if pat is None:
+        if " " in kw:
+            pat = re.compile(re.escape(kw))
+        else:
+            pat = re.compile(
+                rf"(?<![a-z0-9áéíóúüñ]){re.escape(kw)}(?![a-z0-9áéíóúüñ])"
+            )
+        _KEYWORD_RE[kw] = pat
+    return pat.search(text_lower) is not None
+
 
 def relevance_score(text: str) -> float:
     t = (text or "").lower()
     if not t.strip():
         return 0.0
-    hits = sum(1 for k in TOPIC_KEYWORDS if k in t)
+    hits = sum(1 for k in TOPIC_KEYWORDS if _contains_kw(t, k))
     return min(1.0, hits / 3.0)
 
 
@@ -137,7 +156,7 @@ def matched_diseases(text: str) -> list[str]:
     t = (text or "").lower()
     found: set[str] = set()
     for kw, did in DISEASE_MAP.items():
-        if kw in t:
+        if _contains_kw(t, kw):
             found.add(did)
     return sorted(found)
 
@@ -152,21 +171,31 @@ def _is_watchlist_animal_health(source: dict[str, Any] | None) -> bool:
     if source.get("diseases"):
         return True
     domain = str(source.get("domain") or "").lower()
-    if any(d in domain for d in ("woah.org", "fao.org", "who.int", "aphis.", "senasica", "cidrap", "poultry", "pigsite")):
+    if any(d in domain for d in ("woah.org", "fao.org", "aphis.", "senasica", "cidrap", "poultry", "pigsite")):
         return True
     return False
 
 
 def _has_weak_animal_health(text: str) -> bool:
     t = (text or "").lower()
-    return any(tok in t for tok in WEAK_ANIMAL_HEALTH)
+    return any(_contains_kw(t, tok) for tok in WEAK_ANIMAL_HEALTH)
 
 
 def should_skip(
     text: str,
     threshold: float = RELEVANCE_THRESHOLD,
     source: dict[str, Any] | None = None,
+    title: str | None = None,
 ) -> bool:
+    # Medios generales: si el titular no habla de sanidad animal, no entra a Sala
+    # aunque el HTML arrastre "screwworm" o "Arabia" en el pie / relacionados.
+    if (
+        title
+        and len(title.strip()) >= 20
+        and not _is_watchlist_animal_health(source)
+        and relevance_score(title) < threshold
+    ):
+        return True
     score = relevance_score(text)
     if score >= threshold:
         return False
@@ -182,9 +211,13 @@ def should_skip(
     return True
 
 
-def should_analyze(text: str, source: dict[str, Any] | None = None) -> str:
+def should_analyze(
+    text: str,
+    source: dict[str, Any] | None = None,
+    title: str | None = None,
+) -> str:
     """discard | low | analyze | high — embudo, no veredicto de verdad."""
-    if should_skip(text, source=source):
+    if should_skip(text, source=source, title=title):
         return "discard"
     score = relevance_score(text)
     if score < 0.5:
@@ -194,15 +227,19 @@ def should_analyze(text: str, source: dict[str, Any] | None = None) -> str:
     return "high"
 
 
-def classify_topic(text: str, source: dict[str, Any] | None = None) -> dict[str, Any]:
-    skip = should_skip(text, source=source)
+def classify_topic(
+    text: str,
+    source: dict[str, Any] | None = None,
+    title: str | None = None,
+) -> dict[str, Any]:
+    skip = should_skip(text, source=source, title=title)
     return {
         "relevance": relevance_score(text),
-        "bucket": should_analyze(text, source=source),
+        "bucket": should_analyze(text, source=source, title=title),
         "diseases": matched_diseases(text),
         "skip": skip,
         "watchlist_keep": bool(_is_watchlist_animal_health(source) and not skip),
         "threshold": RELEVANCE_THRESHOLD,
         "model_name": "keyword_relevance",
-        "model_version": "diseases_yaml_v2_watchlist",
+        "model_version": "diseases_yaml_v3_wordbound",
     }

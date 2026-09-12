@@ -88,6 +88,12 @@ def load_catalog(path: Path | None = None) -> list[dict[str, Any]]:
         source.setdefault("last_checked", None)
         source.setdefault("next_check", None)
         source.setdefault("last_error", None)
+        try:
+            from risk_engine import infer_authority
+
+            source["authority"] = infer_authority(source) or source.get("authority") or ""
+        except Exception:
+            pass
         by_id[source["source_id"]] = source
     for extra in overrides.get("extra_sources") or []:
         if not isinstance(extra, dict) or not extra.get("source_id"):

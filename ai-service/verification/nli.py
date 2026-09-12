@@ -150,3 +150,91 @@ def verify_claim(claim: dict[str, Any] | str, evidence: list[dict[str, Any]] | N
         "contradicted": contradicted,
         "note": "NLI conservador: Unknown por defecto; Supported solo overlap fuerte + fuente oficial.",
     }
+
+
+def _item_diagnostics(claim_text: str, item: dict[str, Any]) -> dict[str, Any]:
+    snippet = str(item.get("snippet") or item.get("text") or "")
+    url = str(item.get("url") or "")
+    claim_toks = _tokens(claim_text)
+    snip_toks = _tokens(snippet)
+    overlap = sorted(claim_toks & snip_toks)
+    anchors = sorted(set(overlap) & DISEASE_ANCHORS)
+    official = is_official_source(url, snippet)
+    stance = _stance(item, claim_text)
+    missing = []
+    if not official:
+        missing.append("la URL no es dominio oficial")
+    if len(claim_toks) < MIN_CLAIM_TOKENS:
+        missing.append(f"la afirmación tiene {len(claim_toks)} tokens (mínimo {MIN_CLAIM_TOKENS})")
+    if len(overlap) < MIN_OVERLAP:
+        missing.append(f"coinciden {len(overlap)} palabras con la ficha (mínimo {MIN_OVERLAP})")
+    if len(anchors) < MIN_ANCHORS:
+        missing.append(f"anclas de enfermedad: {len(anchors)} (mínimo {MIN_ANCHORS}: h5n1, barrenador, senasica…)")
+    return {
+        "url": url,
+        "official": official,
+        "stance": stance,
+        "claim_tokens": len(claim_toks),
+        "overlap": len(overlap),
+        "overlap_words": overlap[:12],
+        "anchors": anchors,
+        "missing": missing,
+    }
+
+
+def explain_claim(claim: dict[str, Any] | str, evidence: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    evidence = evidence or []
+    claim_text = claim.get("text") if isinstance(claim, dict) else str(claim)
+    if isinstance(claim, dict):
+        claim_text = claim.get("text") or claim.get("claim_text") or str(claim)
+    packed = verify_claim(claim_text, evidence)
+    items = [_item_diagnostics(claim_text, item) for item in evidence]
+    official_n = sum(1 for it in items if it["official"])
+    model = ""
+    stored = None
+    if isinstance(claim, dict):
+        model = str(claim.get("model_name") or "")
+        try:
+            stored = float(claim.get("confidence"))
+        except (TypeError, ValueError):
+            stored = None
+    why_bits = []
+    if model == "ficha_enrich":
+        why_bits.append(
+            f"El {int(round((stored if stored is not None else 0.45) * 100))}% guardado es el valor fijo al armar la afirmación desde el título. Abajo está el NLI medido contra las fichas."
+        )
+    conf = packed["confidence"]
+    if packed["label"] == "Unknown":
+        why_bits.append(
+            f"Postura Unknown: {packed['supported']} ficha(s) respaldan, {packed['contradicted']} contradicen, "
+            f"{official_n} URL oficial(es) de {len(items)} evidencia(s)."
+        )
+        if not items:
+            why_bits.append("No hay evidencia adjunta → confianza 0.")
+        elif packed["supported"] == 0:
+            first_miss = next((it["missing"] for it in items if it["missing"]), [])
+            if first_miss:
+                why_bits.append("Para pasar a Respaldado faltó: " + "; ".join(first_miss) + ".")
+        why_bits.append(
+            f"Fórmula Unknown con evidencia: 0.35 fijo ({int(round(conf * 100))}%). "
+            "Supported sería 0.62 (1 ficha oficial fuerte) o 0.45+0.12×N. Contradicted 0.50+0.15×N."
+        )
+    elif packed["label"] == "Supported":
+        why_bits.append(
+            f"Supported con {packed['supported']} ficha(s) oficial(es). "
+            f"Fórmula: 0.62 si N=1; 0.45+0.12×N si N≥2. Resultado {int(round(conf * 100))}%."
+        )
+    else:
+        why_bits.append(
+            f"Contradicted con {packed['contradicted']} ficha(s). "
+            f"Fórmula: 0.50+0.15×N (tope 0.95). Resultado {int(round(conf * 100))}%."
+        )
+    return {
+        **packed,
+        "official_n": official_n,
+        "items": items,
+        "why": " ".join(why_bits),
+        "formula": (
+            "Unknown=0.35; Supported=0.62 (1) o 0.45+0.12N; Contradicted=0.50+0.15N"
+        ),
+    }

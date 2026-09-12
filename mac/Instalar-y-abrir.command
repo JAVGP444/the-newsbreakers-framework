@@ -86,10 +86,7 @@ fi
 if [ -n "${TNB_DEMO_ROOT:-}" ]; then
   echo "TNB_DEMO_ROOT=$TNB_DEMO_ROOT"
 else
-  echo "Aviso: no se encontró Generador_Excel_Enfermedades."
-  echo "  Buscado: $ROOT/../Generador_Excel_Enfermedades"
-  echo "           $HOME/Desktop/Generador_Excel_Enfermedades"
-  echo "  El dashboard abre igual (keywords de respaldo)."
+  echo "Sin Generador Excel (opcional). Watchlist bundled."
 fi
 echo ""
 
@@ -140,7 +137,9 @@ else
 fi
 
 sleep 4
-open "$WEB_URL"
+echo "Abriendo ventana de app (sin barra del navegador)..."
+nohup python "$ROOT/desktop/open.py" --url "$WEB_URL" >> "$LOG_DIR/desktop.log" 2>&1 &
+disown || true
 
 echo "Observatorio: $WEB_URL"
 echo "API:          $API_URL"

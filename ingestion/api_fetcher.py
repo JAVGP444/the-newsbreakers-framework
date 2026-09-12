@@ -16,12 +16,16 @@ GDELT_QUERY = '("avian influenza" OR H5N1 OR HPAI OR screwworm OR "classical swi
 
 
 def _gdelt_max(explicit: int | None = None) -> int:
+    from config.license import COMMUNITY_CAPS, apply_cap
+
     if explicit is not None:
-        return max(1, min(250, int(explicit)))
-    try:
-        return max(1, min(250, int(os.environ.get("TNB_GDELT_MAX", "75"))))
-    except ValueError:
-        return 75
+        raw = max(1, min(250, int(explicit)))
+    else:
+        try:
+            raw = max(1, min(250, int(os.environ.get("TNB_GDELT_MAX", "75"))))
+        except ValueError:
+            raw = 75
+    return apply_cap("mine", raw, COMMUNITY_CAPS["gdelt_max"])
 
 
 def _lookback_days() -> int:
@@ -32,10 +36,13 @@ def _lookback_days() -> int:
 
 
 def _windows_per_cycle() -> int:
+    from config.license import COMMUNITY_CAPS, apply_cap
+
     try:
-        return max(1, min(8, int(os.environ.get("TNB_GDELT_WINDOWS", "4"))))
+        raw = max(1, min(8, int(os.environ.get("TNB_GDELT_WINDOWS", "4"))))
     except ValueError:
-        return 4
+        raw = 4
+    return apply_cap("mine", raw, COMMUNITY_CAPS["gdelt_windows"])
 
 
 def gdelt_query_windows(
@@ -97,17 +104,13 @@ def _article_to_item(source: dict[str, Any], article: dict[str, Any]) -> Univers
     url = article.get("url") or ""
     if not url:
         return None
-    title = article.get("title") or ""
-    domain = article.get("domain") or ""
+    title = (article.get("title") or "").strip()
     seen = article.get("seendate") or ""
-    text = " ".join(
-        p for p in (title, seen, "avian influenza H5N1 HPAI screwworm SENASICA WOAH", domain) if p
-    )
     return to_universal(
         source_id=source.get("source_id") or "SRC109",
         url=url,
         title=title,
-        text=text,
+        text=title,
         published_at=seen or None,
         language=article.get("language") or "und",
         raw_format="api",

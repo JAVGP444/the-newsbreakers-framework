@@ -6,6 +6,7 @@ import iconUrl from "leaflet/dist/images/marker-icon.png";
 import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 import type { GeoRow } from "../api";
 import { articleHref } from "../safeUrl";
+import { plottablePoints } from "../geoCentroids";
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({ iconRetinaUrl, iconUrl, shadowUrl });
@@ -15,74 +16,131 @@ type Props = {
   height?: number;
   onSelect?: (point: GeoRow) => void;
   focus?: { lat: number; lng: number; label?: string } | null;
+  censor?: boolean;
+  compact?: boolean;
 };
 
 function escapeHtml(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] || c));
 }
 
-export default function MapView({ points, height = 480, onSelect, focus }: Props) {
-  const ref = useRef<HTMLDivElement>(null);
+function radiusPx(count: number, max: number, compact: boolean) {
+  const cap = compact ? 7 : 8;
+  if (max <= 1) return compact ? 6 : 7;
+  return (compact ? 5 : 5) + Math.sqrt(count / max) * cap;
+}
+
+export default function MapView({
+  points,
+  height = 480,
+  onSelect,
+  focus,
+  censor = false,
+  compact = false,
+}: Props) {
+  const hostRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
 
   useEffect(() => {
-    if (!ref.current) return;
-    if (mapRef.current) {
-      mapRef.current.remove();
-      mapRef.current = null;
-    }
-    const map = L.map(ref.current, { zoomControl: true, attributionControl: true }).setView([20, -75], 3);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap",
-      maxZoom: 12,
-    }).addTo(map);
+    const host = hostRef.current;
+    if (!host) return;
+    let cancelled = false;
+    const rows = plottablePoints(points);
 
-    const max = Math.max(...points.map((p) => p.count || 1), 1);
-    const bounds: L.LatLngExpression[] = [];
-    for (const p of points) {
-      if (p.lat == null || p.lng == null) continue;
-      const r = 10 + Math.sqrt((p.count || 1) / max) * 26;
-      const circle = L.circleMarker([p.lat, p.lng], {
-        radius: r,
-        color: "#0b6e7a",
-        weight: 2,
-        fillColor: "#14b8a6",
-        fillOpacity: 0.45 + ((p.count || 1) / max) * 0.35,
-        className: "obs-marker",
-      }).addTo(map);
-      const arts = (p.articles || [])
-        .slice(0, 4)
-        .map(
-          (a) =>
-            `<a class="obs-pop-link" href="#${articleHref(a.content_id)}">${escapeHtml(a.title || a.content_id)}</a>`
-        )
-        .join("");
-      circle.bindPopup(
-        `<div class="obs-pop"><strong>${escapeHtml(p.name)}</strong><span>${p.count} documentos. Pulsa para verlos en la sala.</span>${arts}</div>`
-      );
-      circle.on("click", () => onSelectRef.current?.(p));
-      circle.on("mouseover", () => circle.setStyle({ weight: 3, fillOpacity: 0.85 }));
-      circle.on("mouseout", () => circle.setStyle({ weight: 2, fillOpacity: 0.45 + ((p.count || 1) / max) * 0.35 }));
-      bounds.push([p.lat, p.lng]);
+    function paint(map: L.Map) {
+      const max = Math.max(...rows.map((p) => p.count || 1), 1);
+      const bounds: L.LatLngExpression[] = [];
+      for (const p of rows) {
+        if (p.lat == null || p.lng == null) continue;
+        const circle = L.circleMarker([p.lat, p.lng], {
+          radius: radiusPx(p.count || 1, max, compact),
+          color: "#5eead4",
+          weight: 1.5,
+          fillColor: "#2dd4bf",
+          fillOpacity: 0.7,
+          className: "obs-marker",
+        }).addTo(map);
+        if (censor) {
+          circle.bindPopup(
+            `<div class="obs-pop"><strong>Censurado</strong><span>Hay cobertura aquí. El país se abre con la clave.</span></div>`
+          );
+        } else {
+          const arts = (p.articles || [])
+            .slice(0, 4)
+            .map(
+              (a) =>
+                `<a class="obs-pop-link" href="#${articleHref(a.content_id)}">${escapeHtml(a.title || a.content_id)}</a>`
+            )
+            .join("");
+          circle.bindPopup(
+            `<div class="obs-pop"><strong>${escapeHtml(p.name)}</strong><span>${p.count} documentos. Pulsa para verlos en la sala.</span>${arts}</div>`
+          );
+          circle.on("click", () => onSelectRef.current?.(p));
+        }
+        bounds.push([p.lat, p.lng]);
+      }
+      if (focus) {
+        L.marker([focus.lat, focus.lng]).addTo(map).bindPopup(focus.label || "Ubicación");
+        map.setView([focus.lat, focus.lng], 4);
+      } else if (bounds.length === 1) {
+        map.setView(bounds[0], compact ? 3 : 4);
+      } else if (bounds.length) {
+        map.fitBounds(bounds as L.LatLngBoundsExpression, {
+          padding: compact ? [20, 20] : [28, 28],
+          maxZoom: compact ? 3 : 4,
+          animate: false,
+        });
+      }
+      map.invalidateSize({ animate: false });
     }
-    if (focus) {
-      L.marker([focus.lat, focus.lng]).addTo(map).bindPopup(focus.label || "Ubicación");
-      map.setView([focus.lat, focus.lng], 4);
-    } else if (bounds.length) {
-      map.fitBounds(bounds as L.LatLngBoundsExpression, { padding: [36, 36], maxZoom: 5 });
+
+    function draw() {
+      if (cancelled || !host || host.clientWidth < 80) return;
+      mapRef.current?.remove();
+      mapRef.current = null;
+      const map = L.map(host, {
+        zoomControl: !compact,
+        attributionControl: !compact,
+        dragging: !compact,
+        scrollWheelZoom: !compact,
+        doubleClickZoom: !compact,
+        boxZoom: false,
+        keyboard: false,
+        worldCopyJump: false,
+      });
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution: compact ? "" : "Tiles &copy; Esri",
+          maxZoom: 8,
+          noWrap: true,
+        }
+      ).addTo(map);
+      map.setView([14, -78], compact ? 2 : 2);
+      paint(map);
+      mapRef.current = map;
     }
-    mapRef.current = map;
-    const t = window.setTimeout(() => map.invalidateSize(), 60);
-    const t2 = window.setTimeout(() => map.invalidateSize(), 400);
+
+    const start = window.setTimeout(draw, 40);
+    const ro = new ResizeObserver(() => {
+      if (mapRef.current) mapRef.current.invalidateSize({ animate: false });
+      else draw();
+    });
+    ro.observe(host);
     return () => {
-      window.clearTimeout(t);
-      window.clearTimeout(t2);
-      map.remove();
+      cancelled = true;
+      window.clearTimeout(start);
+      ro.disconnect();
+      mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [points, focus]);
+  }, [points, focus, censor, compact]);
 
-  return <div ref={ref} className="leaflet-host" style={{ height, minHeight: height }} />;
+  return (
+    <div className={compact ? "leaflet-frame is-compact" : "leaflet-frame"} style={{ height }}>
+      <div ref={hostRef} className="leaflet-host" />
+    </div>
+  );
 }

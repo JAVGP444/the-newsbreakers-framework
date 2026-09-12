@@ -431,6 +431,20 @@ class MysqlMirror:
         vals.append(content_id)
         self._exec(f"UPDATE articles SET {', '.join(sets)} WHERE content_id=%s", vals)
 
+    def delete_article(self, content_id: str) -> None:
+        cid = str(content_id or "").strip()
+        if not cid:
+            return
+        self._exec(
+            "DELETE FROM evidence WHERE claim_id IN (SELECT claim_id FROM claims WHERE content_id=%s)",
+            (cid,),
+        )
+        self._exec("DELETE FROM claims WHERE content_id=%s", (cid,))
+        self._exec("DELETE FROM images WHERE content_id=%s", (cid,))
+        self._exec("DELETE FROM alerts WHERE content_id=%s", (cid,))
+        self._exec("DELETE FROM entities WHERE content_id=%s", (cid,))
+        self._exec("DELETE FROM articles WHERE content_id=%s", (cid,))
+
     def insert_claim(self, claim: dict[str, Any]) -> None:
         self._exec(
             """
@@ -527,7 +541,7 @@ class MysqlMirror:
                 row.get("alt_text"),
                 row.get("source_url"),
                 _json(mv) if not isinstance(mv, str) else mv,
-                _json(scores) if scores and not isinstance(scores, str) else scores,
+                _json(scores),
             ),
         )
 

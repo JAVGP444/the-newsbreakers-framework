@@ -1,6 +1,6 @@
 import hashlib
 
-from database.query_filters import parse_article_query
+from database.query_filters import parse_article_datetime, parse_article_query
 from database.store import Store
 
 
@@ -12,7 +12,7 @@ def _art(store: Store, **kw):
             "source_id": kw.get("source_id", "SRC001"),
             "url": kw["url"],
             "url_sha256": hashlib.sha256(kw["url"].encode()).hexdigest(),
-            "title": kw.get("title", "Nota"),
+            "title": kw.get("title", "Brote de gripe aviar H5N1"),
             "text": kw.get("text", "cuerpo " * 80),
             "collected_at": kw.get("collected_at", "2026-09-03T10:00:00"),
             "published_at": kw.get("published_at", "2026-09-03T09:00:00"),
@@ -97,7 +97,7 @@ def test_sources_deferred_and_diseases_from_data(tmp_path, monkeypatch):
     store.upsert_source(
         {"source_id": "SRC001", "name": "SENASICA RSS", "domain": "gob.mx", "access_method": "rss", "last_checked": "2026-09-01"}
     )
-    _art(store, url="https://www.gob.mx/c", source_id="SRC001")
+    _art(store, url="https://www.gob.mx/c", source_id="SRC001", title="Gripe aviar en granja de aves")
     srcs = store.list_sources()
     by_id = {s["source_id"]: s for s in srcs}
     assert by_id["SRC002"]["status"] == "deferred"
@@ -146,3 +146,58 @@ def test_chart_origin_and_verdict(tmp_path, monkeypatch):
     assert len(oficiales) == 1
     assert "gob.mx" in (oficiales[0].get("url") or "")
     store.close()
+
+
+def test_articles_newest_first(tmp_path, monkeypatch):
+    monkeypatch.setattr("database.store.DB_PATH", tmp_path / "tnb.db")
+    store = Store(tmp_path / "tnb.db")
+    _art(
+        store,
+        url="https://www.gob.mx/old",
+        title="Viejo brote de gripe aviar",
+        collected_at="2026-08-01T10:00:00",
+        published_at="2026-08-01T09:00:00",
+    )
+    _art(
+        store,
+        url="https://www.gob.mx/new",
+        title="Nuevo brote de gripe aviar",
+        collected_at="2026-09-12T08:00:00",
+        published_at="2026-09-11T22:00:00",
+    )
+    rows = store.query_articles(parse_article_query(order="newest"), limit=None)
+    titles = [r["title"] for r in rows]
+    assert titles[0] == "Nuevo brote de gripe aviar"
+    assert titles[-1] == "Viejo brote de gripe aviar"
+    store.close()
+
+
+def test_order_uses_published_not_collected(tmp_path, monkeypatch):
+    monkeypatch.setattr("database.store.DB_PATH", tmp_path / "tnb.db")
+    store = Store(tmp_path / "tnb.db")
+    _art(
+        store,
+        url="https://www.gob.mx/agosto",
+        title="Agosto minado hoy gripe aviar",
+        collected_at="2026-09-12T23:50:00",
+        published_at="2026-08-01T09:00:00",
+    )
+    _art(
+        store,
+        url="https://www.gob.mx/septiembre",
+        title="Septiembre publicado gripe aviar",
+        collected_at="2026-09-10T08:00:00",
+        published_at="Wed, 10 Sep 2026 12:00:00 GMT",
+    )
+    rows = store.query_articles(parse_article_query(order="published_at"), limit=None)
+    titles = [r["title"] for r in rows]
+    assert titles[0] == "Septiembre publicado gripe aviar"
+    assert titles[1] == "Agosto minado hoy gripe aviar"
+    store.close()
+
+
+def test_parse_gdelt_seendate():
+    dt = parse_article_datetime("20260912T0")
+    assert dt is not None
+    assert dt.date().isoformat() == "2026-09-12"
+    assert parse_article_datetime("20260912T143000").day == 12

@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { api } from "../api";
 import { TranslateToggle } from "../translate";
+import LicenseBar from "./LicenseBar";
+import BrandMark from "./BrandMark";
 import VerdictLegend from "./VerdictLegend";
 
 const NAV = [
@@ -51,15 +53,19 @@ export default function AppHeader({
     <header className="site-header">
       <div className="site-header-inner">
         <div className="brand-block">
-          <p className="kicker">The NewsBreakers</p>
-          <h1>{title}</h1>
-          {subtitle ? <p className="muted header-sub">{subtitle}</p> : null}
+          <BrandMark />
+          <div>
+            <p className="kicker">The NewsBreakers</p>
+            <h1>{title}</h1>
+            {subtitle ? <p className="muted header-sub">{subtitle}</p> : null}
+          </div>
         </div>
         <div className="top-actions">
           <TranslateToggle />
           {actions}
         </div>
       </div>
+      <LicenseBar />
       <nav className="site-nav" aria-label="Secciones del observatorio">
         {NAV.map((item) => (
           <NavLink
@@ -76,7 +82,7 @@ export default function AppHeader({
           </NavLink>
         ))}
       </nav>
-      <VerdictLegend />
+      {!location.pathname.startsWith("/article") ? <VerdictLegend /> : null}
     </header>
   );
 }

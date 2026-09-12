@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=The NewsBreakers
+Comment=Observatorio de salud animal
+Exec=/opt/newsbreakers/NewsBreakers
+Icon=/opt/newsbreakers/newsbreakers.png
+Terminal=false
+Type=Application
+Categories=Science;

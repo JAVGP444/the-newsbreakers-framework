@@ -71,6 +71,32 @@ def _access(item: dict, rss: str | None) -> str:
     return "scrape"
 
 
+def _default_authority(item: dict, cat_key: str, category: str) -> str:
+    raw = str(item.get("source_authority") or "").strip().upper()
+    if raw in {"A", "B", "C", "D", "E", "F"}:
+        return raw
+    domain = _first_domain(item)
+    official = ("woah.org", "who.int", "fao.org", "cdc.gov", "gob.mx", "usda.gov", "paho.org")
+    if any(domain == d or domain.endswith("." + d) for d in official):
+        return "A"
+    cat = str(cat_key or "").upper()
+    if cat in {"OFFICIAL"}:
+        return "A"
+    if cat in {"RESEARCH", "GENOMIC", "EPIDEMIOLOGICAL", "AGRICULTURAL", "FACT_CHECK"}:
+        return "B"
+    if category == "official":
+        return "A"
+    if category in {"research", "veterinary", "surveillance"}:
+        return "B"
+    if cat in {"YOUTUBE"} or category == "youtube":
+        return "D"
+    if cat in {"SOCIAL", "FORUM"} or category in {"social", "forum"}:
+        return "E"
+    if cat in {"NEWS", "AGGREGATOR"} or category == "media":
+        return "C"
+    return ""
+
+
 def _language(item: dict) -> str:
     lang = item.get("source_language") or item.get("language")
     if lang:
@@ -124,7 +150,7 @@ def main() -> None:
                 "parser_version": "parser_v1",
                 "frequency_minutes": freq,
                 "confidence": int(item.get("priority") or 0) * 10,
-                "authority": item.get("source_authority") or "",
+                "authority": _default_authority(item, str(cat_key), category),
                 "diseases": item.get("diseases") or [],
                 "legacy_section": str(cat_key),
                 "registry_id": item.get("id") or "",

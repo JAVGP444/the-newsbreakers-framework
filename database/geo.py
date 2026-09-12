@@ -110,7 +110,16 @@ _ALIASES: list[tuple[str, str]] = [
 
 def country_info(code: str | None) -> dict[str, Any]:
     key = (code or "XX").upper()
-    meta = COUNTRY_META.get(key) or {"name": key, "lat": 15.0, "lng": -50.0}
+    if key not in COUNTRY_META or key in {"XX", "INT"}:
+        name = (COUNTRY_META.get(key) or {}).get("name") or "Sin ubicar"
+        return {
+            "country": key if key in COUNTRY_META else "XX",
+            "name": name,
+            "lat": None,
+            "lng": None,
+            "unlocated": True,
+        }
+    meta = COUNTRY_META[key]
     return {"country": key, "name": meta["name"], "lat": meta["lat"], "lng": meta["lng"]}
 
 
@@ -126,15 +135,14 @@ def parse_countries(text: str) -> list[str]:
 
 
 def resolve_article_country(article: dict[str, Any], extra_text: str = "") -> str:
-    raw = (article.get("country") or "").strip().upper()
+    raw = (article.get("country") or "").strip()
     title = article.get("title") or ""
-    parsed = parse_countries(f"{title}\n{extra_text}")
-    if raw in COUNTRY_META and raw not in {"XX", ""}:
-        return raw
+    raw_up = raw.upper()
+    if raw_up in COUNTRY_META and raw_up not in {"XX", "INT", ""}:
+        return raw_up
+    parsed = parse_countries(f"{raw}\n{title}\n{extra_text}")
     if parsed:
         return parsed[0]
-    if raw:
-        return raw
     return "XX"
 
 

@@ -61,26 +61,52 @@ export function countryCode(raw: string | null | undefined): string {
   const t = (raw || "").trim();
   if (!t) return "XX";
   const up = t.toUpperCase();
+  if (up === "XX" || up === "INT") return up;
   if (COUNTRY_CENTROIDS[up]) return up;
   const low = t.toLowerCase();
   for (const [alias, iso] of ALIASES) {
-    if (low.includes(alias)) return iso;
+    if (low === alias || low.includes(alias)) return iso;
   }
   return "XX";
 }
 
 export function hydratePoint(row: GeoRow): GeoRow {
   const code = countryCode(row.country || row.name);
-  const meta = COUNTRY_CENTROIDS[code] || COUNTRY_CENTROIDS.XX;
+  const meta = COUNTRY_CENTROIDS[code];
+  if (!meta || code === "XX" || code === "INT" || row.unlocated) {
+    return { ...row, country: code || "XX", unlocated: true, lat: undefined, lng: undefined };
+  }
   return {
     ...row,
-    country: row.country || code,
-    name: row.name || meta.name,
-    lat: row.lat ?? meta.lat,
-    lng: row.lng ?? meta.lng,
+    country: code,
+    name: row.name && row.name !== row.country ? row.name : meta.name,
+    lat: meta.lat,
+    lng: meta.lng,
     count: row.count || row.articles?.length || 1,
     articles: row.articles || [],
+    unlocated: false,
   };
+}
+
+export function plottablePoints(rows: GeoRow[]): GeoRow[] {
+  const buckets = new Map<string, GeoRow>();
+  for (const row of rows || []) {
+    const p = hydratePoint(row);
+    if (p.unlocated || p.lat == null || p.lng == null) continue;
+    const key = (p.country || "").toUpperCase();
+    const cur = buckets.get(key);
+    if (!cur) {
+      buckets.set(key, p);
+      continue;
+    }
+    cur.count = (cur.count || 0) + (p.count || 0);
+    const seen = new Set((cur.articles || []).map((a) => a.content_id));
+    for (const a of p.articles || []) {
+      if (seen.has(a.content_id) || (cur.articles || []).length >= 8) continue;
+      cur.articles = [...(cur.articles || []), a];
+    }
+  }
+  return [...buckets.values()].sort((a, b) => (b.count || 0) - (a.count || 0));
 }
 
 export function geoFromArticles(articles: Article[]): GeoRow[] {
@@ -106,7 +132,7 @@ export function geoFromArticles(articles: Article[]): GeoRow[] {
 }
 
 export function ensureGeoPoints(rows: GeoRow[], articles: Article[]): GeoRow[] {
-  const hydrated = (rows || []).map(hydratePoint).filter((p) => p.lat != null && p.lng != null);
-  if (hydrated.length) return hydrated;
-  return geoFromArticles(articles);
+  const fromApi = plottablePoints(rows || []);
+  if (fromApi.length) return fromApi;
+  return plottablePoints(geoFromArticles(articles));
 }

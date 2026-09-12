@@ -407,7 +407,32 @@ class Store:
         return len(sources)
 
     def get_source(self, source_id: str) -> dict[str, Any] | None:
-        return self.fetchone("SELECT * FROM sources WHERE source_id=?", (source_id,))
+        return self._decorate_source(self.fetchone("SELECT * FROM sources WHERE source_id=?", (source_id,)))
+
+    def _decorate_source(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not row:
+            return None
+        out = dict(row)
+        extra = out.get("extra")
+        if isinstance(extra, str) and extra.strip():
+            try:
+                extra = json.loads(extra)
+            except json.JSONDecodeError:
+                extra = {}
+        if isinstance(extra, dict):
+            out["extra"] = extra
+            for key in ("authority", "diseases", "registry_id"):
+                if extra.get(key) and not out.get(key):
+                    out[key] = extra.get(key)
+        try:
+            from risk_engine import infer_authority
+
+            inferred = infer_authority(out)
+            if inferred and not str(out.get("authority") or "").strip():
+                out["authority"] = inferred
+        except Exception:
+            pass
+        return out
 
     def list_sources(self, active_only: bool = False) -> list[dict[str, Any]]:
         if active_only:
@@ -420,7 +445,7 @@ class Store:
         }
         out = []
         for row in rows:
-            item = dict(row)
+            item = self._decorate_source(row) or dict(row)
             method = (item.get("access_method") or "").lower()
             checked = item.get("last_checked") or item.get("last_success")
             if item.get("last_error"):
@@ -514,6 +539,23 @@ class Store:
             "UPDATE evidence SET url='' WHERE url LIKE 'catalog://%' OR url LIKE 'inapp:%' OR url NOT LIKE 'http%'"
         )
         return {"articles_deleted": deleted_articles, "evidence_cleared": cleaned_evidence}
+
+    def delete_article(self, content_id: str) -> bool:
+        """Quita un artículo y sus claims/evidencia/imágenes/alertas/entidades (SQLite + MySQL)."""
+        cid = str(content_id or "").strip()
+        if not cid or not self.get_article(cid):
+            return False
+        self.execute(
+            "DELETE FROM evidence WHERE claim_id IN (SELECT claim_id FROM claims WHERE content_id=?)",
+            (cid,),
+        )
+        self.execute("DELETE FROM claims WHERE content_id=?", (cid,))
+        self.execute("DELETE FROM images WHERE content_id=?", (cid,))
+        self.execute("DELETE FROM alerts WHERE content_id=?", (cid,))
+        self.execute("DELETE FROM entities WHERE content_id=?", (cid,))
+        self.execute("DELETE FROM articles WHERE content_id=?", (cid,))
+        self._mysql("delete_article", cid)
+        return True
 
     def public_row(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
         if not row:
@@ -689,7 +731,7 @@ class Store:
 
     def list_articles(self, limit: int = 50) -> list[dict[str, Any]]:
         return self.fetchall(
-            "SELECT * FROM articles ORDER BY collected_at DESC LIMIT ?",
+            "SELECT * FROM articles ORDER BY datetime(coalesce(nullif(published_at,''), collected_at)) DESC, collected_at DESC LIMIT ?",
             (limit,),
         )
 
@@ -913,12 +955,42 @@ class Store:
             out.append(item)
         return out
 
+    def alerts_for_article(self, content_id: str) -> list[dict[str, Any]]:
+        if not content_id:
+            return []
+        return self.fetchall(
+            "SELECT * FROM alerts WHERE content_id=? ORDER BY created_at DESC",
+            (content_id,),
+        )
+
     def count_alerts(self, status: str | None = None) -> int:
         if status:
             row = self.fetchone("SELECT COUNT(*) AS n FROM alerts WHERE status=?", (status,))
         else:
             row = self.fetchone("SELECT COUNT(*) AS n FROM alerts")
         return int((row or {}).get("n") or 0)
+
+    def source_hitl_shift(self, source_id: str) -> float:
+        if not source_id:
+            return 0.0
+        rows = self.fetchall(
+            """
+            SELECT a.human_label AS human_label
+            FROM alerts a
+            JOIN articles art ON art.content_id = a.content_id
+            WHERE art.source_id=? AND a.status='reviewed'
+              AND a.human_label IN ('validado', 'descartado')
+            """,
+            (source_id,),
+        )
+        delta = 0.0
+        for row in rows:
+            label = str(row.get("human_label") or "")
+            if label == "validado":
+                delta -= 8.0
+            elif label == "descartado":
+                delta += 10.0
+        return max(-40.0, min(40.0, delta))
 
     def review_alert(
         self,
@@ -932,12 +1004,41 @@ class Store:
         if not alert:
             return None
         now = _now()
+        label = str(human_label or "").strip().lower()
+        if label == "modificado":
+            self.execute(
+                """
+                UPDATE alerts SET human_label=?, human_reason=?
+                WHERE alert_id=?
+                """,
+                (label, reason, alert_id),
+            )
+            self.audit("alert", alert_id, "human_review", {"label": label, "analyst": analyst, "open": True})
+            cid = alert.get("content_id")
+            if cid:
+                article = self.get_article(cid)
+                if article:
+                    versions = article.get("model_versions")
+                    if isinstance(versions, str):
+                        try:
+                            versions = json.loads(versions)
+                        except json.JSONDecodeError:
+                            versions = {}
+                    versions = dict(versions or {})
+                    why = versions.get("risk_why") if isinstance(versions.get("risk_why"), dict) else {}
+                    why = dict(why)
+                    why["rule"] = "hitl_modificado"
+                    why["hitl"] = {"label": label, "reason": reason}
+                    versions["risk_why"] = why
+                    self.update_article_analysis(cid, verdict="REVISIÓN HUMANA", model_versions=versions)
+            return self.fetchone("SELECT * FROM alerts WHERE alert_id=?", (alert_id,))
+
         self.execute(
             """
             UPDATE alerts SET status=?, human_label=?, human_reason=?, reviewed_at=?
             WHERE alert_id=?
             """,
-            ("reviewed", human_label, reason, now, alert_id),
+            ("reviewed", label, reason, now, alert_id),
         )
         review_id = "RV-" + hashlib.sha256(f"{alert_id}:{now}".encode()).hexdigest()[:12]
         self.insert_review(
@@ -945,21 +1046,99 @@ class Store:
                 "review_id": review_id,
                 "alert_id": alert_id,
                 "prediction": alert.get("verdict"),
-                "human_label": human_label,
+                "human_label": label,
                 "reason": reason,
                 "analyst": analyst,
-                "used_for_retraining": 0,
+                "used_for_retraining": 1,
             }
         )
-        self.audit("alert", alert_id, "human_review", {"label": human_label, "analyst": analyst})
+        cid = alert.get("content_id")
+        if cid:
+            try:
+                from risk_engine import apply_hitl_label
+
+                spec = apply_hitl_label(label, reason)
+            except Exception:
+                spec = {
+                    "validado": {"verdict": "RESPALDADO", "risk_score": 22, "rule": "hitl_validado"},
+                    "descartado": {"verdict": "CONTRADICHO", "risk_score": 82, "rule": "hitl_descartado"},
+                }.get(label)
+                if spec:
+                    spec = {**spec, "reason": reason}
+            if spec:
+                article = self.get_article(cid)
+                versions = {}
+                if article:
+                    versions = article.get("model_versions") or {}
+                    if isinstance(versions, str):
+                        try:
+                            versions = json.loads(versions)
+                        except json.JSONDecodeError:
+                            versions = {}
+                    versions = dict(versions or {})
+                why = versions.get("risk_why") if isinstance(versions.get("risk_why"), dict) else {}
+                why = dict(why)
+                why["rule"] = spec["rule"]
+                why["score"] = spec["risk_score"]
+                why["hitl"] = {"label": label, "reason": reason}
+                versions["risk_why"] = why
+                self.update_article_analysis(
+                    cid,
+                    verdict=spec["verdict"],
+                    risk_score=spec["risk_score"],
+                    model_versions=versions,
+                )
+        self.audit("alert", alert_id, "human_review", {"label": label, "analyst": analyst})
         self._mysql(
             "update_alert_review",
             alert_id,
-            human_label=human_label,
+            human_label=label,
             reason=reason,
             reviewed_at=now,
         )
         return self.fetchone("SELECT * FROM alerts WHERE alert_id=?", (alert_id,))
+
+    def review_article(
+        self,
+        content_id: str,
+        *,
+        human_label: str,
+        reason: str = "",
+        analyst: str = "analista",
+    ) -> dict[str, Any] | None:
+        art = self.get_article(content_id)
+        if not art:
+            return None
+        pending = [
+            a
+            for a in self.alerts_for_article(content_id)
+            if str(a.get("status") or "") == "pending_review"
+        ]
+        if pending:
+            return self.review_alert(
+                pending[0]["alert_id"],
+                human_label=human_label,
+                reason=reason,
+                analyst=analyst,
+            )
+        alert_id = "AL-" + hashlib.sha256(f"{content_id}:{_now()}:{human_label}".encode()).hexdigest()[:12]
+        self.insert_alert(
+            {
+                "alert_id": alert_id,
+                "content_id": content_id,
+                "risk_score": art.get("risk_score"),
+                "verdict": art.get("verdict"),
+                "status": "pending_review",
+                "model_name": "hitl",
+                "model_version": "sala",
+            }
+        )
+        return self.review_alert(
+            alert_id,
+            human_label=human_label,
+            reason=reason,
+            analyst=analyst,
+        )
 
     def insert_review(self, row: dict[str, Any]) -> None:
         self.execute(
@@ -1349,18 +1528,27 @@ class Store:
         return needle in blob
 
     def query_articles(self, q=None, *, limit: int | None = 400) -> list[dict[str, Any]]:
-        from database.query_filters import ArticleQuery, article_day, origin_matches, stance_matches, verdict_matches
+        from database.query_filters import (
+            ArticleQuery,
+            article_day,
+            origin_matches,
+            published_sort_key,
+            stance_matches,
+            verdict_matches,
+        )
 
         if q is None:
             q = ArticleQuery()
         elif not isinstance(q, ArticleQuery):
             q = ArticleQuery(disease=str(q) if q else None)
 
+        published = "datetime(coalesce(nullif(published_at,''), collected_at)) DESC, collected_at DESC"
         order_sql = {
             "risk_score": "risk_score DESC, collected_at DESC",
-            "published_at": "coalesce(published_at, collected_at) DESC",
+            "published_at": published,
+            "newest": published,
             "collected_at": "collected_at DESC",
-        }.get(q.order, "collected_at DESC")
+        }.get(q.order, published)
 
         sql = "SELECT * FROM articles WHERE 1=1"
         params: list[Any] = []
@@ -1397,10 +1585,14 @@ class Store:
                 if stance_matches(claim.get("nli_label"), q.stance):
                     stance_ids.add(claim["content_id"])
 
+        source_rows = self.fetchall("SELECT * FROM sources")
         source_names = {
             s["source_id"]: f"{s.get('name') or ''} {s.get('domain') or ''}"
-            for s in self.fetchall("SELECT source_id, name, domain FROM sources")
+            for s in source_rows
         }
+        source_meta = {s["source_id"]: s for s in source_rows}
+        from relevance import should_skip
+
         out: list[dict[str, Any]] = []
         for row in self.fetchall(sql, params):
             row = dict(row)
@@ -1426,11 +1618,24 @@ class Store:
                 blob = f"{row.get('title') or ''} {row.get('text') or ''} {row.get('source_id') or ''} {name}".lower()
                 if q.q.lower() not in blob:
                     continue
+            fmt = str(row.get("raw_format") or "").lower()
+            if fmt not in {"fixture", "corpus"}:
+                src = source_meta.get(row.get("source_id"))
+                title = row.get("title") or ""
+                blob = f"{title} {row.get('text') or ''}"
+                if should_skip(blob, source=src, title=title):
+                    continue
             row["disease_list"] = self.article_diseases(row)
             row["day"] = article_day(row)
             out.append(row)
-            if limit is not None and len(out) >= limit:
-                break
+        if q.order == "risk_score":
+            out.sort(key=lambda r: (r.get("risk_score") is None, -(r.get("risk_score") or 0), r.get("collected_at") or ""), reverse=False)
+        elif q.order == "collected_at":
+            out.sort(key=lambda r: r.get("collected_at") or "", reverse=True)
+        else:
+            out.sort(key=published_sort_key, reverse=True)
+        if limit is not None:
+            out = out[:limit]
         return out
 
     def filtered_articles(self, disease: str | None = None, limit: int = 400, q=None) -> list[dict[str, Any]]:

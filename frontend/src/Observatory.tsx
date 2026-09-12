@@ -236,7 +236,7 @@ export default function Observatory() {
   }
 
   const titles: Record<Panel, { title: string; subtitle: string }> = {
-    sala: { title: "Sala de vigilancia", subtitle: "Documentos recientes. Cada tarjeta abre la ficha de análisis." },
+    sala: { title: "Sala de vigilancia", subtitle: "Por fecha de publicación." },
     revision: { title: "Revisión humana", subtitle: "Revisa afirmaciones y evidencia, y valida o descarta cada alerta." },
     mapa: { title: "Mapa de menciones", subtitle: "Pulsa un país para ver sus documentos en la sala." },
     graficas: { title: "Gráficas", subtitle: "De qué enfermedades se habla, de dónde sale y qué concluyó el análisis." },
@@ -258,8 +258,9 @@ export default function Observatory() {
           </button>
         }
       />
-      {err && <p className="banner err">{err}</p>}
-      {note && <p className="banner">{note}</p>}
+      {panel !== "sala" && err && <p className="banner err">{err}</p>}
+      {panel !== "sala" && note && <p className="banner">{note}</p>}
+      {panel !== "sala" ? (
       <p className={bannerClass}>
         {mine?.last_mine ? `Última minería: ${formatMineTime(mine.last_mine)}` : "Aún no hay corrida de minería"}
         {" · "}
@@ -275,13 +276,21 @@ export default function Observatory() {
             ? "MySQL conectado"
             : "MySQL no conectado (SQLite)"}
       </p>
+      ) : null}
 
+      {panel !== "sala" ? (
       <section className="kpis" aria-label="Indicadores">
         <Kpi label="Artículos" value={kpis?.articles ?? "—"} series={sparks.articles} />
         <Kpi label="Afirmaciones" value={kpis?.claims ?? "—"} series={sparks.articles} color="#34d399" bars />
         <Kpi label="Alertas pendientes" value={kpis?.alerts_pending ?? "—"} series={sparks.articles} color="#f87171" accent />
         <Kpi label="Fuentes" value={kpis?.sources ?? "—"} series={sparks.articles} />
       </section>
+      ) : (
+        <>
+          {err ? <p className="banner err">{err}</p> : null}
+          {note ? <p className="banner">{note}</p> : null}
+        </>
+      )}
 
       <div className="toolbar">
         <div className="disease-pills" role="group" aria-label="Filtro por enfermedad">
@@ -466,8 +475,8 @@ function ArticleGrid({
 
   return (
     <section className="sala-list">
-      <p className="muted list-count">
-        {total} documentos · página {page} de {pageCount}
+        <p className="muted list-count">
+        {total} documentos
       </p>
       <div className="art-cards">
         {articles.map((a, i) => (
@@ -575,8 +584,8 @@ function HitlQueue({ alerts, onDone }: { alerts: AlertRow[]; onDone: () => Promi
       setEditId("");
       setReason("");
       await onDone();
-    } catch {
-      setNote("No se pudo guardar la revisión. Inténtalo de nuevo.");
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : "No se pudo guardar la revisión. Inténtalo de nuevo.");
     } finally {
       setBusyId("");
     }
@@ -613,6 +622,9 @@ function HitlQueue({ alerts, onDone }: { alerts: AlertRow[]; onDone: () => Promi
               ) : (
                 <p className="muted">Sin evidencia oficial disponible.</p>
               )}
+              {a.human_reason ? (
+                <p className="muted">Nota del analista: {a.human_reason}</p>
+              ) : null}
               {editId === a.alert_id ? (
                 <label className="hitl-reason">
                   Motivo (obligatorio)

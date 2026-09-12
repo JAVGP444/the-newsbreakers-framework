@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import sys
 import time
@@ -31,7 +32,7 @@ from nli import verify_claim  # noqa: E402
 from process import process_image, write_placeholder_png  # noqa: E402
 from relevance import classify_topic
 from retrieve import retrieve_evidence  # noqa: E402
-from risk_engine import claim_severity_score, risk_score, source_unreliability  # noqa: E402
+from risk_engine import collect_signals, needs_alert, risk_score  # noqa: E402
 from rss_fetcher import fetch_source_rss  # noqa: E402
 from source_catalog import (  # noqa: E402
     backoff_next_check,
@@ -47,7 +48,9 @@ ALERT_THRESHOLD = int(os.environ.get("TNB_ALERT_THRESHOLD", "55"))
 MAX_SOURCES = int(os.environ.get("TNB_MAX_SOURCES", "250"))
 RETRY_FAST = os.environ.get("TNB_FAST", "0") == "1"
 RETRY_WAITS = (2.0, 5.0) if RETRY_FAST else (30.0, 120.0)
-KEEP_FORMATS = {"youtube", "social", "corpus", "fixture", "api"}
+# Corpus/fixture/social/youtube: conservar para demo y colas. GDELT `api` SÍ se filtra
+# (si no, entran reseñas de restaurantes y geopolítica a Sala).
+KEEP_FORMATS = {"youtube", "social", "corpus", "fixture"}
 
 
 def _env_flag(name: str, default: str = "0") -> bool:
@@ -152,6 +155,148 @@ def inject_demo_seed(store: Store, index: DedupIndex) -> list[dict[str, Any]]:
     return created
 
 
+def _as_dict(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _parse_when(row: dict[str, Any] | None) -> datetime | None:
+    row = row or {}
+    for key in ("published_at", "collected_at"):
+        raw = row.get(key)
+        if not raw:
+            continue
+        try:
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    return None
+
+
+def _peer_rows(store: Store, item: dict[str, Any], diseases: list[str]) -> list[dict[str, Any]]:
+    country = str(item.get("country") or "").upper()
+    want = set(diseases or [])
+    anchor = _parse_when(item)
+    window = timedelta(days=7)
+    out: list[dict[str, Any]] = []
+    for row in store.list_articles(limit=120):
+        if row.get("content_id") == item.get("content_id"):
+            continue
+        if country and country not in {"XX", "", "INT"}:
+            if str(row.get("country") or "").upper() != country:
+                continue
+        tags = set(store.article_diseases(row))
+        if want and tags and not (want & tags):
+            continue
+        when = _parse_when(row)
+        if anchor and when and abs((when - anchor).total_seconds()) > window.total_seconds():
+            continue
+        src = store.get_source(row.get("source_id") or "") or {}
+        out.append(
+            {
+                **row,
+                "source_type": row.get("source_type") or src.get("type"),
+                "type": src.get("type"),
+                "category": src.get("category"),
+                "authority": src.get("authority"),
+            }
+        )
+        if len(out) >= 24:
+            break
+    return out
+
+
+def _narrative_growth(store: Store, diseases: list[str]) -> float:
+    needles = [d.replace("_", " ").lower() for d in (diseases or []) if d]
+    best = 0.0
+    for nar in store.list_narratives():
+        blob = f"{nar.get('label') or ''} {nar.get('keywords') or ''}".lower()
+        if needles and not any(n in blob for n in needles):
+            continue
+        try:
+            best = max(best, float(nar.get("growth_pct") or 0))
+        except (TypeError, ValueError):
+            continue
+    return best
+
+
+def _persist_risk(store: Store, content_id: str, risk: dict[str, Any], article: dict[str, Any]) -> None:
+    versions = _as_dict(article.get("model_versions"))
+    versions["risk"] = risk.get("model_version")
+    versions["risk_why"] = risk.get("why")
+    store.update_article_analysis(
+        content_id,
+        pipeline_level=9 if risk["verdict"] == "REVISIÓN HUMANA" else 8,
+        risk_score=risk["risk_score"],
+        verdict=risk["verdict"],
+        model_versions=versions,
+    )
+
+
+def _upsert_review_alert(store: Store, content_id: str, risk: dict[str, Any], claim_id: str | None = None) -> None:
+    if not needs_alert(risk, ALERT_THRESHOLD):
+        return
+    alert_id = "AL-" + hashlib.sha256(content_id.encode()).hexdigest()[:12]
+    prev = store.fetchone("SELECT status FROM alerts WHERE alert_id=?", (alert_id,))
+    if prev and str(prev.get("status") or "") == "reviewed":
+        return
+    store.insert_alert(
+        {
+            "alert_id": alert_id,
+            "content_id": content_id,
+            "claim_id": claim_id,
+            "risk_score": risk["risk_score"],
+            "verdict": risk["verdict"],
+            "explanation": risk.get("why"),
+            "status": "pending_review",
+            "model_name": risk["model_name"],
+            "model_version": risk["model_version"],
+        }
+    )
+
+
+def refresh_article_risk(store: Store, content_id: str, source: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    article = store.get_article(content_id)
+    if not article:
+        return None
+    src = source or store.get_source(article.get("source_id") or "") or {}
+    claims = store.list_claims(content_id)
+    images = store.list_images(content_id)
+    diseases = store.article_diseases(article)
+    nli = _article_nli_label(claims)
+    evidence_rows: list[dict[str, Any]] = []
+    for claim in claims:
+        evidence_rows.extend(store.list_evidence(claim["claim_id"]))
+    signals = collect_signals(
+        nli_label=nli,
+        source=src,
+        claims=claims,
+        images=images,
+        peers=_peer_rows(store, article, diseases),
+        evidence=evidence_rows,
+        growth_pct=_narrative_growth(store, diseases),
+        relevance=article.get("relevance_score"),
+        alert_threshold=ALERT_THRESHOLD,
+        hitl_shift=store.source_hitl_shift(article.get("source_id") or ""),
+    )
+    risk = risk_score(signals)
+    _persist_risk(store, content_id, risk, article)
+    claim_id = claims[0]["claim_id"] if claims else None
+    _upsert_review_alert(store, content_id, risk, claim_id)
+    store.audit("article", content_id, "verdict", {"verdict": risk["verdict"], "why": risk.get("why"), "nli": nli})
+    return risk
+
+
 def _article_nli_label(claims: list[dict[str, Any]]) -> str:
     labels = [c.get("nli_label") for c in claims]
     if labels.count("Contradicted") > labels.count("Supported"):
@@ -170,7 +315,7 @@ def analyze_article(
     llm_budget: list[int] | None = None,
 ) -> dict[str, Any]:
     text = f"{item.get('title') or ''} {item.get('text') or ''}"
-    topic = classify_topic(text, source=source)
+    topic = classify_topic(text, source=source, title=item.get("title"))
     raw_fmt = str(item.get("raw_format") or "")
     if topic["skip"] and raw_fmt not in KEEP_FORMATS:
         store.audit("article", item["content_id"], "relevance_skip", topic)
@@ -209,12 +354,9 @@ def analyze_article(
         store.insert_entity(ent)
 
     body = (item.get("text") or "").strip()
-    packed: dict[str, Any] = {"claims": [], "main_claim": "", "model_name": "skipped_short_text", "model_version": "len400"}
+    packed = extract_claims(text, topic.get("diseases"))
     if len(body) < 400:
-        store.update_article_analysis(item["content_id"], pipeline_level=1)
-        store.audit("article", item["content_id"], "claims_skipped_short_text", {"chars": len(body)})
-    else:
-        packed = extract_claims(text, topic.get("diseases"))
+        store.audit("article", item["content_id"], "claims_from_title_lead", {"chars": len(body)})
     claims_out = []
     for claim in packed.get("claims") or []:
         claim["content_id"] = item["content_id"]
@@ -266,16 +408,33 @@ def analyze_article(
         image_jobs.append(job)
 
     nli_label = _article_nli_label(claims_out)
-    signals = {
-        "nli_label": nli_label,
-        "evidence_contradiction": 90 if nli_label == "Contradicted" else (10 if nli_label == "Supported" else 40),
-        "source_reliability": source_unreliability(source),
-        "image_reuse": 0,
-        "claim_severity": claim_severity_score(claims_out),
-        "alert_threshold": ALERT_THRESHOLD,
-        "low_confidence": nli_label == "Unknown" and topic["relevance"] >= 0.8,
-    }
+    diseases = topic.get("diseases") or []
+    evidence_rows = []
+    for claim in claims_out:
+        evidence_rows.extend(store.list_evidence(claim["claim_id"]))
+    signals = collect_signals(
+        nli_label=nli_label,
+        source=source,
+        claims=claims_out,
+        images=[],
+        peers=_peer_rows(store, item, diseases),
+        evidence=evidence_rows,
+        growth_pct=_narrative_growth(store, diseases),
+        relevance=topic["relevance"],
+        alert_threshold=ALERT_THRESHOLD,
+        hitl_shift=store.source_hitl_shift(item.get("source_id") or ""),
+    )
     risk = risk_score(signals)
+    versions = {
+        **(item.get("model_versions") or {}),
+        "relevance": topic["model_version"],
+        "claims": packed.get("model_version"),
+        "risk": risk["model_version"],
+        "risk_why": risk.get("why"),
+        "nli": "lexical_v2_conservative",
+        "llm": explanation.get("model") or "token-overlap",
+        "cnn": "cnn32_64_64_dense64_v1",
+    }
     store.update_article_analysis(
         item["content_id"],
         relevance_score=topic["relevance"],
@@ -287,15 +446,7 @@ def analyze_article(
         llm_status=explanation.get("status") or llm_probe.get("status"),
         llm_explanation=explanation.get("reasoning") or explanation.get("summary") or "",
         llm_provider=explanation.get("provider") or llm_probe.get("provider"),
-        model_versions={
-            **(item.get("model_versions") or {}),
-            "relevance": topic["model_version"],
-            "claims": packed.get("model_version"),
-            "risk": risk["model_version"],
-            "nli": "lexical_v2_conservative",
-            "llm": explanation.get("model") or "token-overlap",
-            "cnn": "cnn32_64_64_dense64_v1",
-        },
+        model_versions=versions,
     )
     store.audit(
         "article",
@@ -311,7 +462,7 @@ def analyze_article(
     ensure_article_thumb(store, store.get_article(item["content_id"]) or item)
 
     alert = None
-    if risk["risk_score"] >= ALERT_THRESHOLD or risk["verdict"] in {"CONTRADICHO", "POSIBLEMENTE ENGAÑOSO", "REVISIÓN HUMANA"}:
+    if needs_alert(risk, ALERT_THRESHOLD):
         alert_id = "AL-" + hashlib.sha256(item["content_id"].encode()).hexdigest()[:12]
         alert = {
             "alert_id": alert_id,
@@ -340,6 +491,7 @@ def process_image_jobs(store: Store, jobs: list[dict[str, Any]]) -> tuple[int, i
     known = [(r["image_id"], r.get("phash") or "") for r in store.list_images()]
     processed = 0
     cnn_n = 0
+    touched: set[str] = set()
 
     def _handle(payload: dict[str, Any]) -> Any:
         nonlocal processed, cnn_n
@@ -374,11 +526,10 @@ def process_image_jobs(store: Store, jobs: list[dict[str, Any]]) -> tuple[int, i
             cnn_n += 1
         known.append((result["image_id"], result.get("phash") or ""))
         processed += 1
+        cid = result.get("content_id") or payload.get("content_id") or ""
+        if cid:
+            touched.add(cid)
         if result.get("reused"):
-            article = store.get_article(result["content_id"])
-            if article:
-                extra_risk = int(article.get("risk_score") or 0) + 12
-                store.update_article_analysis(result["content_id"], risk_score=min(100, extra_risk))
             store.audit("image", result["image_id"], "phash_reuse", {"content_id": result["content_id"]})
         return result
 
@@ -386,6 +537,8 @@ def process_image_jobs(store: Store, jobs: list[dict[str, Any]]) -> tuple[int, i
     pending = jobs[len(drained) :]
     for job in pending:
         _handle(job)
+    for cid in touched:
+        refresh_article_risk(store, cid)
     return processed, cnn_n
 
 
@@ -405,6 +558,9 @@ def run_cycle(
     persist: bool = True,
     force_due: bool | None = None,
 ) -> dict[str, Any]:
+    from config.license import apply_cap
+
+    max_sources = apply_cap("mine", max_sources, 8)
     now = _now()
     cycle_id = "CYC-" + now.strftime("%Y%m%dT%H%M%SZ")
     store = Store()
@@ -428,18 +584,16 @@ def run_cycle(
     due_all = sources_due(runtime, now=now, methods=harvest_methods, force=force or empty_db)
     if max_sources <= 0:
         due = []
-    elif empty_db or force:
-        due = due_all
-        why = "SQLite vacío" if empty_db else "force-due"
-        print(f"  [{why}] {len(due)} fuentes {harvest_methods} (sin recortar a {max_sources})")
     else:
-        due = due_all[: max_sources]
+        due = due_all[:max_sources]
         if len(due_all) > max_sources:
-            print(f"  [tope] {max_sources}/{len(due_all)} fuentes due (sube TNB_MAX_SOURCES)")
+            tag = "evaluación" if max_sources <= 8 else "tope"
+            print(f"  [{tag}] {max_sources}/{len(due_all)} fuentes (licencia mine = watchlist completa)")
     try:
         scrape_cap = max(0, int(os.environ.get("TNB_HTML_LISTING_SOURCES", "10")))
     except ValueError:
         scrape_cap = 10
+    scrape_cap = apply_cap("mine", scrape_cap, 2)
     if html_listings and scrape_cap >= 0:
         rss_api = [s for s in due if resolve_access(s) != "scrape"]
         scrape_only = [s for s in due if resolve_access(s) == "scrape"]
@@ -585,6 +739,10 @@ def run_cycle(
     except Exception:
         pass
     narratives = update_narratives(store, cycle_id)
+    for payload in collected:
+        cid = payload.get("content_id")
+        if cid:
+            refresh_article_risk(store, cid)
     from database.cnn_dataset import dataset_counts
     from database.mysql_mirror import mysql_status
     from database.mine_state import record_cycle
@@ -725,6 +883,11 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     parser.add_argument("--cycles", type=int, default=1, help="Ciclos seguidos sin dormir (minar-ya)")
     parser.add_argument("--force-due", action="store_true", help="Ignorar next_check; recorrer toda la watchlist")
     args = parser.parse_args(argv)
+    from config.license import is_licensed
+
+    if not is_licensed():
+        print("Sin licencia no hay minería. Activa TNB1 en la app.")
+        raise SystemExit(2)
     if args.force_due:
         os.environ["TNB_FORCE_DUE"] = "1"
     from database.mine_state import mine_interval_seconds, record_cycle

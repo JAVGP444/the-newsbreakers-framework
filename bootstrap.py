@@ -27,6 +27,12 @@ import sys
 from pathlib import Path
 
 FRAMEWORK_ROOT = Path(__file__).resolve().parent
+if str(FRAMEWORK_ROOT) not in sys.path:
+    sys.path.insert(0, str(FRAMEWORK_ROOT))
+
+from config.paths import app_home, bundle_root  # noqa: E402
+
+_HOME = app_home()
 
 _DEFAULT_PROJECT = FRAMEWORK_ROOT.parent / "Generador_Excel_Enfermedades"
 PROJECT_ROOT = Path(
@@ -53,7 +59,7 @@ LEGACY_API = LEGACY_REPO / "api"
 CONFIG_DIR = DATOS_DIR
 REPO_ROOT = PROJECT_ROOT
 GENERADOR_SQLITE = DATOS_DIR / "newsbreakers" / "newsbreakers.db"
-CNN_DIR = FRAMEWORK_ROOT / "models" / "cnn"
+CNN_DIR = bundle_root() / "models" / "cnn"
 CNN_WEIGHTS = CNN_DIR / "vision_cnn_v1.pt"
 CNN_DATASET_DIR = CNN_DIR / "dataset"
 CNN_CLASSES = (
@@ -75,11 +81,11 @@ CANONICAL_DASHBOARD = SALIDA_DIR / "urls_enfermedades_dashboard.html"
 VISUAL_DASHBOARD = SALIDA_DIR / "observatorio_visual.html"
 LAUNCHER_BAT = PROJECT_ROOT / "★ THE NEWSBREAKERS.bat"
 
-DATA_DIR = FRAMEWORK_ROOT / "data"
+DATA_DIR = _HOME / "data"
 RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 DB_PATH = PROCESSED_DIR / "tnb.db"
-IMAGES_DIR = FRAMEWORK_ROOT / "storage" / "images"
+IMAGES_DIR = _HOME / "storage" / "images"
 _GENERADOR_ENF_CFG = PROJECT_ROOT / "enfermedades_config.yaml"
 _BUNDLED_ENF_CFG = FRAMEWORK_ROOT / "config" / "enfermedades_config.yaml"
 ENFERMEDADES_CONFIG = _GENERADOR_ENF_CFG if _GENERADOR_ENF_CFG.is_file() else _BUNDLED_ENF_CFG

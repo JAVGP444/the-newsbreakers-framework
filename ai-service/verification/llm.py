@@ -85,11 +85,13 @@ def _parse_llm_json(text: str) -> dict[str, Any] | None:
 
 
 def _resolve_provider() -> tuple[str, dict[str, str]] | None:
+    from config.license import allows
+
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if openai_key:
+    if openai_key and allows("llm"):
         return "openai", {"api_key": openai_key, "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini")}
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
-    if anthropic_key:
+    if anthropic_key and allows("llm"):
         return "anthropic", {
             "api_key": anthropic_key,
             "model": os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-20241022"),

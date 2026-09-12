@@ -38,6 +38,11 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if not args.demo_seed:
         os.environ.setdefault("TNB_DEMO_SEED", "0")
+    from config.license import is_licensed
+
+    if not is_licensed():
+        print("Sin licencia no hay minería. Activa TNB1 en la app o TNB_LICENSE_KEY.")
+        raise SystemExit(2)
     os.environ.setdefault("TNB_FAST", "0")
     interval = mine_interval_seconds(args.interval)
     print(f"[mine] intervalo {interval}s  watchlist RSS/API/HTML  dual-write MySQL+SQLite")

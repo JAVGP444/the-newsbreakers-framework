@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import type { ImageRow } from "../api";
 import { imageSrc } from "../api";
 import { articleHref } from "../safeUrl";
+import { cnnConfidenceWhy } from "../display";
 
 const CLASS_LABEL: Record<string, string> = {
   OFFICIAL_DOCUMENT: "Documento oficial",
@@ -40,6 +41,7 @@ export function ImageCard({ image, detailed }: { image: ImageRow; detailed?: boo
         <strong>{CLASS_LABEL[image.cnn_class || ""] || image.cnn_class || "Sin clase"}</strong>
         <span>{(((image.cnn_confidence || 0) as number) * 100).toFixed(0)}%</span>
         {image.reuse_label && <em className="reuse">{image.reuse_label}</em>}
+        {detailed && <p className="muted cnn-why">{cnnConfidenceWhy(image)}</p>}
         {detailed && <SoftmaxBars scores={image.cnn_scores} />}
         {detailed && (
           <p className="ocr">{image.ocr_text?.trim() ? image.ocr_text.slice(0, 280) : "Sin texto en la imagen"}</p>

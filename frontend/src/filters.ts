@@ -127,6 +127,7 @@ export function filtersToApiQuery(filters: ObservatoryFilters): string {
   if (filters.risk_min != null) p.set("risk_min", String(filters.risk_min));
   if (filters.risk_max != null) p.set("risk_max", String(filters.risk_max));
   if (filters.risk_null) p.set("risk_null", "1");
+    p.set("order", "published_at");
   return p.toString();
 }
 

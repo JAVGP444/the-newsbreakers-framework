@@ -12,6 +12,7 @@ torch>=2.2.0
 # pytesseract                  # OCR si Tesseract está instalado
 pytest>=8.3.0
 pymysql>=1.1.1
+pywebview>=5.4
 # paddleocr                    # OCR extra opcional (pesado)
 # redis>=5.0.0
 # feedparser>=6.0.11
