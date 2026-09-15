@@ -64,3 +64,4 @@ logs/
 Thumbs.db
 *.zip
 mac.zip
+.cursor/
