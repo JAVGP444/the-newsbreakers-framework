@@ -99,7 +99,7 @@ def _paddle(path: str) -> dict[str, Any] | None:
 
 
 def _studio_engine():
-    from config.caps import allows
+    from config.license import allows
 
     if not allows("ocr"):
         return None

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { thumbSrc, type Article } from "../api";
-import { KIND_LABEL, sourceInitials, type SourceKind } from "../display";
+import { kindLabel, sourceInitials, type SourceKind } from "../display";
+import { useLocale } from "../locale";
 
 export function ContextualThumb({
   kind,
@@ -9,10 +10,11 @@ export function ContextualThumb({
   kind: SourceKind;
   sourceName: string;
 }) {
+  const { lang } = useLocale();
   return (
     <div className={`art-placeholder initials kind-${kind}`}>
-      <b>{sourceInitials(sourceName)}</b>
-      <span>{KIND_LABEL[kind]}</span>
+      <b>{sourceInitials(sourceName, lang)}</b>
+      <span>{kindLabel(kind, lang)}</span>
     </div>
   );
 }

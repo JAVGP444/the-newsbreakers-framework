@@ -7,6 +7,7 @@ import {
   type ElementType,
   type ReactNode,
 } from "react";
+import { useLocale } from "../locale";
 
 type Props = {
   maxLines?: number;
@@ -24,9 +25,12 @@ export default function LeerMas({
   children,
   className = "",
   as,
-  moreLabel = "Leer más",
-  lessLabel = "Leer menos",
+  moreLabel,
+  lessLabel,
 }: Props) {
+  const { t } = useLocale();
+  const more = moreLabel || t("common.more");
+  const less = lessLabel || t("common.less");
   const lines = maxItems == null ? maxLines ?? 4 : maxLines;
   const [open, setOpen] = useState(false);
   const [needed, setNeeded] = useState(false);
@@ -100,7 +104,7 @@ export default function LeerMas({
             setOpen((v) => !v);
           }}
         >
-          {open ? lessLabel : moreLabel}
+          {open ? less : more}
         </button>
       ) : null}
     </div>

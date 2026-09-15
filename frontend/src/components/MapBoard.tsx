@@ -2,14 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import type { GeoRow } from "../api";
 import { MAP_DISEASE_COLOR, mapDiseaseStyle, riskHint } from "../display";
 import { pointKey } from "../geoCentroids";
+import { useLocale } from "../locale";
 import MapView from "./MapView";
 
-function diseaseLabel(row: GeoRow) {
-  return mapDiseaseStyle(row.disease || row.diseases?.[0]).label;
-}
-
-function grainLabel(row: GeoRow) {
-  return row.grain === "place" ? "Lugar en la nota" : "País";
+function diseaseLabel(row: GeoRow, lang: "es" | "en") {
+  return mapDiseaseStyle(row.disease || row.diseases?.[0], lang).label;
 }
 
 export default function MapBoard({
@@ -21,6 +18,7 @@ export default function MapBoard({
   unlocated: GeoRow[];
   onOpenSala: (point: GeoRow) => void;
 }) {
+  const { t, lang } = useLocale();
   const [picked, setPicked] = useState<GeoRow | null>(null);
   const [q, setQ] = useState("");
 
@@ -45,8 +43,8 @@ export default function MapBoard({
   if (!points.length && !unlocated.length) {
     return (
       <section className="viz">
-        <h3>Sin lugares en este recorte</h3>
-        <p className="muted">Cuando una nota nombre un país o un estado, aparece aquí como punto.</p>
+        <h3>{t("map.emptyTitle")}</h3>
+        <p className="muted">{t("map.empty")}</p>
       </section>
     );
   }
@@ -54,41 +52,39 @@ export default function MapBoard({
   return (
     <section className="graph-board map-board">
       <p className="graph-howto">
-        Cada punto es un lugar que las notas nombran: un estado o condado si el texto lo dice, si no el país. El tamaño
-        es cuántas notas hablan de ahí, no la gravedad del brote. El color sigue la enfermedad más citada. Un aro ámbar
-        marca promedio de riesgo alto en las fichas.
+        {t("map.howto")}
       </p>
       <p className="graph-legend">
-        {Object.entries(MAP_DISEASE_COLOR).map(([id, meta]) => (
+        {Object.entries(MAP_DISEASE_COLOR).map(([id]) => (
           <span key={id}>
-            <i className="swatch" style={{ background: meta.fill }} /> {meta.label}
+            <i className="swatch" style={{ background: MAP_DISEASE_COLOR[id].fill }} /> {mapDiseaseStyle(id, lang).label}
           </span>
         ))}
         <span>
-          <i className="swatch" style={{ background: "#94a3b8" }} /> Varias o sin etiqueta
+          <i className="swatch" style={{ background: "#94a3b8" }} /> {t("disease.mixed")}
         </span>
         <span className="muted">
-          {points.length} lugares · {locatedNotes} notas ubicadas
-          {lostNotes ? ` · ${lostNotes} sin ubicar` : ""}
-          {hot ? ` · mayor riesgo: ${hot.name}` : ""}
+          {t("map.places", { n: points.length, notes: locatedNotes })}
+          {lostNotes ? t("map.unlocated", { n: lostNotes }) : ""}
+          {hot ? t("map.hot", { name: hot.name }) : ""}
         </span>
       </p>
       <div className="graph-split">
         <MapView points={points} height={560} selectedId={picked ? pointKey(picked) : null} onSelect={setPicked} />
         <aside className="graph-rels" aria-label="Lugares del mapa">
           <div className="graph-rels-head">
-            <h4>Dónde mirar</h4>
-            <p className="muted">{picked ? picked.name : `${rows.length} lugares`}</p>
+            <h4>{t("map.look")}</h4>
+            <p className="muted">{picked ? picked.name : t("map.placesN", { n: rows.length })}</p>
             <input
               type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar Texas, Chiapas…"
-              aria-label="Buscar lugar"
+              placeholder={t("map.search")}
+              aria-label={t("map.searchAria")}
             />
             {picked ? (
               <button type="button" className="ghost" onClick={() => setPicked(null)}>
-                Ver todos
+                {t("map.all")}
               </button>
             ) : null}
           </div>
@@ -97,10 +93,10 @@ export default function MapBoard({
               <table>
                 <thead>
                   <tr>
-                    <th>Lugar</th>
-                    <th>Notas</th>
-                    <th>De qué</th>
-                    <th>Desde</th>
+                    <th>{t("map.col.place")}</th>
+                    <th>{t("map.col.notes")}</th>
+                    <th>{t("map.col.what")}</th>
+                    <th>{t("map.col.since")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -113,19 +109,19 @@ export default function MapBoard({
                       <td>
                         <strong>{p.name}</strong>
                         <em>
-                          {grainLabel(p)}
-                          {p.risk_mean != null ? ` · riesgo ${riskHint(p.risk_mean)}` : ""}
+                          {p.grain === "place" ? t("map.grain.place") : t("map.grain.country")}
+                          {p.risk_mean != null ? ` · ${t("map.riskWord")} ${riskHint(p.risk_mean, lang)}` : ""}
                         </em>
                       </td>
                       <td className="rel">{p.count}</td>
-                      <td>{diseaseLabel(p)}</td>
+                      <td>{diseaseLabel(p, lang)}</td>
                       <td className="rel">{p.first_seen || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             ) : (
-              <p className="muted">Ningún lugar coincide.</p>
+              <p className="muted">{t("map.none")}</p>
             )}
           </div>
         </aside>
@@ -136,9 +132,9 @@ export default function MapBoard({
             <strong>{picked.name}</strong>
             <em>
               {" "}
-              · {picked.count} notas · {diseaseLabel(picked)}
-              {picked.risk_mean != null ? ` · riesgo ${riskHint(picked.risk_mean)}` : ""}
-              {picked.first_seen ? ` · desde ${picked.first_seen}` : ""}
+              · {t("map.notesN", { n: picked.count })} · {diseaseLabel(picked, lang)}
+              {picked.risk_mean != null ? ` · ${t("map.riskWord")} ${riskHint(picked.risk_mean, lang)}` : ""}
+              {picked.first_seen ? ` · ${t("map.since", { date: picked.first_seen })}` : ""}
             </em>
             {picked.articles?.length ? (
               <ul className="map-pick-arts">
@@ -149,15 +145,15 @@ export default function MapBoard({
             ) : null}
           </div>
           <button type="button" className="run" onClick={() => onOpenSala(picked)}>
-            Ver en la sala
+            {t("map.openSala")}
           </button>
         </div>
       ) : (
-        <p className="muted">Pulsa un punto o una fila. Luego “Ver en la sala”.</p>
+        <p className="muted">{t("map.pickHint")}</p>
       )}
       {lostNotes ? (
         <p className="muted unlocated-line">
-          Sin ubicar ({lostNotes}): {unlocated.map((u) => `${u.name} ${u.count}`).join(" · ")}
+          {t("map.unlocatedLine", { n: lostNotes, list: unlocated.map((u) => `${u.name} ${u.count}`).join(" · ") })}
         </p>
       ) : null}
     </section>

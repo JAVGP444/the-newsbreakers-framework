@@ -3,26 +3,17 @@ import type { ImageRow } from "../api";
 import { imageSrc } from "../api";
 import { articleHref } from "../safeUrl";
 import { cnnConfidenceWhy } from "../display";
-
-const CLASS_LABEL: Record<string, string> = {
-  OFFICIAL_DOCUMENT: "Documento oficial",
-  NEWS_SCREENSHOT: "Captura de noticia",
-  SOCIAL_MEDIA: "Red social",
-  MEME: "Meme",
-  INFOGRAPHIC: "Infografía",
-  ANIMAL_HEALTH_CONTENT: "Salud animal",
-  PHOTOGRAPH: "Fotografía",
-  POTENTIALLY_MANIPULATED: "Posible manipulación",
-};
+import { useLocale } from "../locale";
 
 export function SoftmaxBars({ scores }: { scores?: Record<string, number> | null }) {
+  const { t } = useLocale();
   const entries = Object.entries(scores || {}).sort((a, b) => b[1] - a[1]);
   if (!entries.length) return null;
   return (
     <ul className="softmax">
       {entries.map(([k, v]) => (
         <li key={k}>
-          <span>{CLASS_LABEL[k] || k}</span>
+          <span>{t(`cnn.type.${k}`) === `cnn.type.${k}` ? k : t(`cnn.type.${k}`)}</span>
           <b>
             <i style={{ width: `${Math.max(2, v * 100)}%` }} />
           </b>
@@ -34,19 +25,22 @@ export function SoftmaxBars({ scores }: { scores?: Record<string, number> | null
 }
 
 export function ImageCard({ image, detailed }: { image: ImageRow; detailed?: boolean }) {
+  const { t } = useLocale();
+  const klass = t(`cnn.type.${image.cnn_class || ""}`);
+  const label = klass.startsWith("cnn.type.") ? image.cnn_class || t("cnn.noClass") : klass;
   const inner = (
     <>
-      <img src={imageSrc(image)} alt={image.cnn_class || "imagen analizada"} />
+      <img src={imageSrc(image)} alt={image.cnn_class || t("image.alt")} />
       <div>
-        <strong>{CLASS_LABEL[image.cnn_class || ""] || image.cnn_class || "Sin clase"}</strong>
+        <strong>{label}</strong>
         <span>{(((image.cnn_confidence || 0) as number) * 100).toFixed(0)}%</span>
         {image.reuse_label && <em className="reuse">{image.reuse_label}</em>}
         {detailed && <p className="muted cnn-why">{cnnConfidenceWhy(image)}</p>}
         {detailed && <SoftmaxBars scores={image.cnn_scores} />}
         {detailed && (
-          <p className="ocr">{image.ocr_text?.trim() ? image.ocr_text.slice(0, 280) : "Sin texto en la imagen"}</p>
+          <p className="ocr">{image.ocr_text?.trim() ? image.ocr_text.slice(0, 280) : t("article.noOcr")}</p>
         )}
-        {!detailed && <p>{(image.ocr_text || "").slice(0, 72) || "Abrir ficha del artículo"}</p>}
+        {!detailed && <p>{(image.ocr_text || "").slice(0, 72) || t("image.openCard")}</p>}
       </div>
     </>
   );
@@ -59,8 +53,9 @@ export function ImageCard({ image, detailed }: { image: ImageRow; detailed?: boo
 }
 
 export function ImageStrip({ images }: { images: ImageRow[] }) {
+  const { t } = useLocale();
   const real = images.filter((im) => im.image_id);
-  if (!real.length) return <p className="muted">Sin imágenes en el filtro actual.</p>;
+  if (!real.length) return <p className="muted">{t("image.none")}</p>;
   return (
     <div className="img-strip">
       {real.map((im) => (

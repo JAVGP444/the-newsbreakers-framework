@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type NarrativeDossier, type NarrativeOverview } from "../api";
+import { useLocale } from "../locale";
 import NarrativeCharts from "./NarrativeCharts";
 import NetworkGraph from "./NetworkGraph";
 import { MiniBars } from "./Sparkline";
 
-const FORCE_OPTS = [
-  { id: "1", label: "Toda fuerza" },
-  { id: "3", label: "Media o más (3–5)" },
-  { id: "4", label: "Alta (4–5)" },
-];
-
 export type NarrativeSurface = "sala" | "revision" | "graficas" | "grafo";
 
 export default function NarrativesPanel({ query, surface = "sala" }: { query: string; surface?: NarrativeSurface }) {
+  const { t } = useLocale();
+  const forceOpts = [
+    { id: "1", label: t("nar.force1") },
+    { id: "3", label: t("nar.force3") },
+    { id: "4", label: t("nar.force4") },
+  ];
   const [data, setData] = useState<NarrativeOverview | null>(null);
   const [err, setErr] = useState("");
   const [category, setCategory] = useState("");
@@ -36,7 +37,7 @@ export default function NarrativesPanel({ query, surface = "sala" }: { query: st
         setSelected((cur) => cur || first || "");
       })
       .catch(() => {
-        if (!cancelled) setErr("No se pudieron cargar los relatos agrupados.");
+        if (!cancelled) setErr(t("nar.loadFail"));
       });
     return () => {
       cancelled = true;
@@ -49,14 +50,14 @@ export default function NarrativesPanel({ query, surface = "sala" }: { query: st
     if (!dossier) return;
     try {
       await api.reviewNarrative(dossier.narrative_id, label, "Revisión desde narrativas");
-      setNote(`Revisión guardada: ${label}. No es un sello de malicia.`);
+      setNote(t("nar.saved", { label }));
     } catch (e) {
-      setNote(e instanceof Error ? e.message : "No se pudo guardar.");
+      setNote(e instanceof Error ? e.message : t("nar.saveFail"));
     }
   }
 
   if (err) return <p className="banner err">{err}</p>;
-  if (!data) return <p className="muted">Cargando relatos…</p>;
+  if (!data) return <p className="muted">{t("nar.loading")}</p>;
 
   const onSala = surface === "sala";
   const onRevision = surface === "revision";
@@ -67,27 +68,26 @@ export default function NarrativesPanel({ query, surface = "sala" }: { query: st
     <div className="narrative-stack">
       {onSala || onRevision ? (
         <p className="muted">
-          {data.principle} Recorte: {data.sample} notas. Fuentes disponibles: {data.sources_available ?? "—"} · usadas
-          en contraste: {data.sources_used ?? "—"}.
+          {data.principle} {t("nar.cut", { n: data.sample, available: data.sources_available ?? "—", used: data.sources_used ?? "—" })}
         </p>
       ) : null}
 
       {onSala && data.kpis ? (
-        <section className="kpis" aria-label="Narrativas">
+        <section className="kpis" aria-label={t("nar.kpis")}>
           <div className="kpi">
-            <span>Relatos</span>
+            <span>{t("nar.stories")}</span>
             <strong>{data.kpis.narratives ?? 0}</strong>
           </div>
           <div className="kpi">
-            <span>En crecimiento</span>
+            <span>{t("nar.growing")}</span>
             <strong>{data.kpis.growing ?? 0}</strong>
           </div>
           <div className="kpi">
-            <span>Prioridad alta</span>
+            <span>{t("nar.priority")}</span>
             <strong>{data.kpis.priority ?? 0}</strong>
           </div>
           <div className="kpi">
-            <span>Afirmaciones</span>
+            <span>{t("nar.claims")}</span>
             <strong>{data.kpis.claims ?? 0}</strong>
           </div>
         </section>
@@ -95,8 +95,8 @@ export default function NarrativesPanel({ query, surface = "sala" }: { query: st
 
       {onRevision && (data.alerts || []).length ? (
         <section className="viz">
-          <h3>Alertas de relato</h3>
-          <p className="muted">Piden análisis. No confirman desinformación.</p>
+          <h3>{t("nar.alerts")}</h3>
+          <p className="muted">{t("nar.alertsLead")}</p>
           <ul className="method-list">
             {data.alerts?.map((a) => (
               <li key={a.narrative_id}>
@@ -113,19 +113,19 @@ export default function NarrativesPanel({ query, surface = "sala" }: { query: st
 
       {onSala ? (
       <section className="viz">
-        <h3>Relatos agrupados</h3>
-        <p className="muted">Un relato puede reunir muchas notas que dicen esencialmente lo mismo.</p>
+        <h3>{t("nar.grouped")}</h3>
+        <p className="muted">{t("nar.groupedLead")}</p>
         {(data.narratives || []).length ? (
           <div className="source-table-wrap">
             <table className="source-table">
               <thead>
                 <tr>
-                  <th>Relato</th>
-                  <th>Estado</th>
-                  <th>Notas</th>
-                  <th>Crecimiento</th>
-                  <th>Prioridad</th>
-                  <th>Contraste</th>
+                  <th>{t("nar.col.story")}</th>
+                  <th>{t("nar.col.state")}</th>
+                  <th>{t("nar.col.notes")}</th>
+                  <th>{t("nar.col.growth")}</th>
+                  <th>{t("nar.col.priority")}</th>
+                  <th>{t("nar.col.contrast")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -152,7 +152,7 @@ export default function NarrativesPanel({ query, surface = "sala" }: { query: st
             </table>
           </div>
         ) : (
-          <p className="muted">Aún no hay relatos agrupados en este recorte.</p>
+          <p className="muted">{t("nar.empty")}</p>
         )}
       </section>
       ) : null}
@@ -161,12 +161,12 @@ export default function NarrativesPanel({ query, surface = "sala" }: { query: st
 
       {onGrafo ? (
       <section className="viz">
-        <h3>Conceptos del relato</h3>
+        <h3>{t("nar.concepts")}</h3>
         <div className="filter-row">
           <label>
-            Categoría
+            {t("nar.category")}
             <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              <option value="">Todas</option>
+              <option value="">{t("filter.all")}</option>
               {(data.categories || []).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.label} ({c.count})
@@ -175,9 +175,9 @@ export default function NarrativesPanel({ query, surface = "sala" }: { query: st
             </select>
           </label>
           <label>
-            Fuerza mínima
+            {t("nar.force")}
             <select value={forceMin} onChange={(e) => setForceMin(e.target.value)}>
-              {FORCE_OPTS.map((o) => (
+              {forceOpts.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.label}
                 </option>
@@ -188,7 +188,7 @@ export default function NarrativesPanel({ query, surface = "sala" }: { query: st
         {data.graph?.nodes?.length ? (
           <NetworkGraph nodes={data.graph.nodes} edges={data.graph.edges} height={420} />
         ) : (
-          <p className="muted">No hay co-ocurrencias con este recorte.</p>
+          <p className="muted">{t("nar.noCo")}</p>
         )}
       </section>
       ) : null}
@@ -197,17 +197,17 @@ export default function NarrativesPanel({ query, surface = "sala" }: { query: st
 
       {onGrafo ? (
       <section className="viz">
-        <h3>Relaciones</h3>
+        <h3>{t("nar.rels")}</h3>
         {data.pairs.length ? (
           <div className="source-table-wrap">
             <table className="source-table">
               <thead>
                 <tr>
-                  <th>Nodo A</th>
-                  <th>Nodo B</th>
-                  <th>Relación</th>
-                  <th>Fuerza</th>
-                  <th>Apariciones</th>
+                  <th>{t("nar.col.a")}</th>
+                  <th>{t("nar.col.b")}</th>
+                  <th>{t("nar.col.rel")}</th>
+                  <th>{t("nar.col.force")}</th>
+                  <th>{t("nar.col.hits")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -224,7 +224,7 @@ export default function NarrativesPanel({ query, surface = "sala" }: { query: st
             </table>
           </div>
         ) : (
-          <p className="muted">Sin pares con este recorte.</p>
+          <p className="muted">{t("nar.noPairs")}</p>
         )}
       </section>
       ) : null}
@@ -243,49 +243,56 @@ function Dossier({
   note: string;
   compact?: boolean;
 }) {
+  const { t } = useLocale();
   const series = n.series || [];
   return (
     <section className="viz narrative-dossier">
       <h3>{n.label}</h3>
       <p className="ficha-lead">{n.description}</p>
       <p className="muted">
-        {n.state_label || n.state} · {n.volume} publicaciones · {n.country_n ?? 0} países · {n.sources_n ?? 0}{" "}
-        fuentes · primera aparición detectada {n.first_seen || "—"}. {n.origin_note}
+        {t("nar.pubs", {
+          state: n.state_label || n.state || "—",
+          n: n.volume,
+          countries: n.country_n ?? 0,
+          sources: n.sources_n ?? 0,
+          first: n.first_seen || "—",
+        })}{" "}
+        {n.origin_note}
       </p>
       {n.priority ? (
         <p>
-          Prioridad de investigación: <strong>{n.priority.label}</strong>. {n.priority.why}
+          {t("nar.priorityLine")} <strong>{n.priority.label}</strong>. {n.priority.why}
         </p>
       ) : null}
       {n.classification ? (
         <p>
-          Caracterización: <strong>{n.classification.label}</strong>. {n.classification.why}
+          {t("nar.classLine")} <strong>{n.classification.label}</strong>. {n.classification.why}
         </p>
       ) : null}
       {n.contrast_level ? (
         <p className="muted">
-          Nivel de contraste {n.contrast_level.level}/5: {n.contrast_level.label}
+          {t("nar.contrastLine", { n: n.contrast_level.level })} {n.contrast_level.label}
         </p>
       ) : null}
 
       {!compact && series.length ? (
         <>
-          <h4>Evolución temporal</h4>
+          <h4>{t("nar.time")}</h4>
           <MiniBars values={series.map((p) => p.count)} />
           <p className="muted">
-            {series[0]?.day} → {series[series.length - 1]?.day}. Pico:{" "}
-            {series.reduce((a, b) => (b.count > a.count ? b : a), series[0]).day}.
+            {t("nar.range", { from: series[0]?.day || "—", to: series[series.length - 1]?.day || "—" })}{" "}
+            {t("nar.peak")} {series.reduce((a, b) => (b.count > a.count ? b : a), series[0]).day}.
           </p>
         </>
       ) : null}
 
       {!compact && (n.semantic_stages || []).length ? (
         <>
-          <h4>Evolución semántica</h4>
+          <h4>{t("nar.semantic")}</h4>
           <ol className="method-list">
             {n.semantic_stages?.map((s) => (
               <li key={s.stage}>
-                Etapa {s.stage} ({s.from} – {s.to}): {s.concepts.join(" → ") || "sin señales del banco"}
+                {t("nar.stage", { n: s.stage, from: s.from || "—", to: s.to || "—" })} {s.concepts.join(" → ") || t("nar.noBank")}
               </li>
             ))}
           </ol>
@@ -294,14 +301,14 @@ function Dossier({
 
       {!compact && (n.claims || []).length ? (
         <>
-          <h4>Afirmaciones</h4>
+          <h4>{t("nar.claims")}</h4>
           <div className="source-table-wrap">
             <table className="source-table">
               <thead>
                 <tr>
-                  <th>Texto</th>
-                  <th>Modalidad</th>
-                  <th>NLI</th>
+                  <th>{t("nar.col.text")}</th>
+                  <th>{t("nar.col.mod")}</th>
+                  <th>{t("nar.col.nli")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -320,11 +327,11 @@ function Dossier({
 
       {!compact && (n.evidence || []).length ? (
         <>
-          <h4>Evidencia usada</h4>
+          <h4>{t("nar.evidence")}</h4>
           <ul className="method-list">
             {n.evidence?.slice(0, 10).map((e) => (
               <li key={e.evidence_id || e.url}>
-                {e.official ? "Oficial" : e.source_tier || "Fuente"} · {e.host || e.url} · {e.stance || "—"}
+                {e.official ? t("origin.oficial") : e.source_tier || t("common.source")} · {e.host || e.url} · {e.stance || "—"}
                 {e.snippet ? ` — ${e.snippet}` : ""}
               </li>
             ))}
@@ -334,17 +341,17 @@ function Dossier({
 
       {!compact && (n.propagation || []).length ? (
         <>
-          <h4>Propagación por país</h4>
-          <p className="muted">El primer país detectado no es origen causal.</p>
+          <h4>{t("nar.prop")}</h4>
+          <p className="muted">{t("nar.propLead")}</p>
           <div className="source-table-wrap">
             <table className="source-table">
               <thead>
                 <tr>
-                  <th>País</th>
-                  <th>Primera aparición</th>
-                  <th>Publicaciones</th>
-                  <th>Fuentes</th>
-                  <th>Pico</th>
+                  <th>{t("filter.country")}</th>
+                  <th>{t("nar.col.first")}</th>
+                  <th>{t("nar.col.pubs")}</th>
+                  <th>{t("nar.col.sources")}</th>
+                  <th>{t("nar.col.peak")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -365,7 +372,7 @@ function Dossier({
 
       {!compact && (n.articles || []).length ? (
         <>
-          <h4>Notas del relato</h4>
+          <h4>{t("nar.notes")}</h4>
           <ul className="method-list">
             {n.articles?.map((a) => (
               <li key={a.content_id}>
@@ -380,13 +387,13 @@ function Dossier({
         <>
           <div className="filter-row">
             <button type="button" className="chip" onClick={() => onReview("continuar_monitoreo")}>
-              Continuar monitoreando
+              {t("nar.watch")}
             </button>
             <button type="button" className="chip" onClick={() => onReview("necesita_evidencia")}>
-              Necesita más evidencia
+              {t("nar.need")}
             </button>
             <button type="button" className="chip" onClick={() => onReview("descartado")}>
-              Falso positivo
+              {t("nar.false")}
             </button>
           </div>
           {note ? <p className="muted">{note}</p> : null}

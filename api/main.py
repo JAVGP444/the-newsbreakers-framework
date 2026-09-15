@@ -188,10 +188,16 @@ def _backfill_thumb_ids(content_ids: list[str]) -> None:
         store.close()
 
 
+@app.get("/license")
+def license_ping():
+    """Las .app antiguas pegan aquí al arrancar. No hay puerta de pago."""
+    return {"ok": True}
+
+
 @app.get("/health")
 def health():
-    """El .app espera un 200 para abrir la ventana. El resto va por /stats."""
-    return {"status": "ok", "service": "newsbreakers"}
+    """El .app solo espera un 200 para abrir la ventana. El resto va por /stats."""
+    return {"status": "ok", "service": "tnb-pipeline"}
 
 
 @app.get("/sources")

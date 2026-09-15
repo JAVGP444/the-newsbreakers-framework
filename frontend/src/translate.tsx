@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "./api";
+import { useLocale } from "./locale";
 
 export const STORAGE_KEY = "tnb.translateEs";
 const CHUNK = 8;
@@ -97,7 +98,9 @@ async function translateChunked(texts: string[]): Promise<string[]> {
 }
 
 export function useTranslated(texts: string[]): string[] {
-  const { enabled, begin, end, fail } = useTranslateEs();
+  const { lang } = useLocale();
+  const { begin, end, fail } = useTranslateEs();
+  const enabled = lang === "es";
   const key = texts.join("\u0001");
   const [, bump] = useState(0);
 
@@ -119,7 +122,7 @@ export function useTranslated(texts: string[]): string[] {
           return out;
         })
         .catch(() => {
-          fail("No se pudo traducir. Reintenta el interruptor.");
+          fail("translate-fail");
           return missing;
         })
         .finally(() => {

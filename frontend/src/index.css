@@ -278,6 +278,32 @@ h4 {
 .translate-toggle.on { color: var(--ink); }
 .translate-toggle.err { color: var(--bad); }
 
+.lang-switch {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.lang-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.lang-switch button + button {
+  border-left: 1px solid var(--line);
+}
+.lang-switch button.on {
+  background: var(--accent);
+  color: #042018;
+}
+
 .banner { background: var(--panel); border: 1px solid var(--line); padding: 10px 12px; font-size: 14px; border-radius: 8px; }
 .banner.err { border-color: var(--bad); color: #f0c7c0; }
 .banner.mine-banner { color: var(--muted); }

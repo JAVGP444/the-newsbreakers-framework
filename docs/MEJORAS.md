@@ -1,5 +1,9 @@
 # Plan de mejoras — observatorio The NewsBreakers
 
+> **Español / English.** Plan interno de producto (septiembre 2026). No es la guía de instalación. Instalación: [`README.md`](../README.md), `docs/install-es.pdf`, `docs/install-en.pdf`.
+>
+> **English.** Internal product plan (September 2026). Not the install guide. See [`README.md`](../README.md) and the install PDFs.
+
 **Fecha:** 10 de septiembre de 2026  
 **Ámbito:** `C:\Users\javie\OneDrive\Escritorio\the-newsbreakers-framework`  
 **UI:** Vite :5173 · **API:** FastAPI :8010 · **Lectura:** SQLite `data/processed/tnb.db`  

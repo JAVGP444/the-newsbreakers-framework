@@ -1,5 +1,9 @@
 # Auditoría del framework — The NewsBreakers
 
+> **Español / English.** Auditoría interna (septiembre 2026). No es la guía de instalación. Instalación actual: [`README.md`](../README.md) y `docs/install-es.pdf` / `docs/install-en.pdf`.
+>
+> **English.** Internal audit (September 2026). Not the install guide. Current install: [`README.md`](../README.md) and the install PDFs.
+
 **Fecha:** 10 de septiembre de 2026  
 **Ámbito:** `C:\Users\javie\OneDrive\Escritorio\the-newsbreakers-framework`  
 **Origen relacionado:** `C:\Users\javie\OneDrive\Escritorio\Generador_Excel_Enfermedades`  

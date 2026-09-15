@@ -19,16 +19,17 @@ import {
 import type { NarrativeOverview } from "../api";
 import { AXIS, CHART_MARGIN, GRID, OKABE_ITO, TICK, seriesColor } from "../chartTheme";
 import { shortChartDate } from "../display";
+import { useLocale } from "../locale";
 import { ChartFrame } from "./ChartsPanel";
 
-function tickDate(iso: string) {
+function tickDate(iso: string, lang: "es" | "en" = "es") {
   if (/^\d{4}-\d{2}$/.test(iso)) {
     const d = new Date(`${iso}-01T12:00:00`);
     if (!Number.isNaN(d.getTime())) {
-      return d.toLocaleDateString("es-MX", { month: "short", year: "2-digit" });
+      return d.toLocaleDateString(lang === "en" ? "en-US" : "es-MX", { month: "short", year: "2-digit" });
     }
   }
-  return shortChartDate(iso);
+  return shortChartDate(iso, lang);
 }
 
 function bucketPoints(points: { day: string; count: number }[]) {
@@ -100,6 +101,7 @@ function SeriesTip({
 
 export default function NarrativeCharts({ data }: { data: NarrativeOverview }) {
   const navigate = useNavigate();
+  const { t, lang } = useLocale();
   const bank = data.bank || {};
 
   const signals = useMemo(() => {
@@ -122,13 +124,13 @@ export default function NarrativeCharts({ data }: { data: NarrativeOverview }) {
     for (const b of buckets) for (const p of b.points) days.add(p.day);
     const ordered = [...days].sort();
     return ordered.map((day) => {
-      const row: Record<string, string | number> = { day, label: tickDate(day) };
+      const row: Record<string, string | number> = { day, label: tickDate(day, lang) };
       for (const b of buckets) {
         row[b.n.narrative_id] = b.points.find((p) => p.day === day)?.count || 0;
       }
       return row;
     });
-  }, [stories]);
+  }, [stories, lang]);
 
   const peak = useMemo(() => {
     if (!timeline.length || !stories.length) return null;
@@ -151,13 +153,9 @@ export default function NarrativeCharts({ data }: { data: NarrativeOverview }) {
   return (
     <div className="chart-stack">
       <ChartFrame
-        title="Señales más frecuentes"
-        howto={[
-          "Cada barra es un término del banco, no un veredicto.",
-          "El número es cuántas veces aparece en el recorte; el % es su parte entre estas señales.",
-          "Pulsa una barra para ver las notas que lo mencionan en la sala.",
-        ]}
-        caption={signals[0] ? `La más citada ahora es “${signals[0].term}” (${signals[0].count}). Peso no es malicia.` : null}
+        title={t("nar.signalsTitle")}
+        howto={[t("nar.signals1"), t("nar.signals2"), t("nar.signals3")]}
+        caption={signals[0] ? t("nar.citedNow", { term: signals[0].term, n: signals[0].count }) : null}
       >
         {signals.length ? (
           <ResponsiveContainer width="100%" height={barH}>
@@ -166,7 +164,7 @@ export default function NarrativeCharts({ data }: { data: NarrativeOverview }) {
               <XAxis type="number" hide />
               <YAxis type="category" dataKey="term" width={168} tick={TICK} interval={0} />
               <Tooltip content={<SignalTip onGo={goTerm} />} />
-              <Bar dataKey="count" name="Menciones" radius={[0, 4, 4, 0]} cursor="pointer" onClick={(row) => goTerm(String((row as { term?: string })?.term || ""))}>
+              <Bar dataKey="count" name={t("nar.mentions")} radius={[0, 4, 4, 0]} cursor="pointer" onClick={(row) => goTerm(String((row as { term?: string })?.term || ""))}>
                 {signals.map((row, i) => (
                   <Cell key={row.term} fill={seriesColor(row.category, i)} />
                 ))}
@@ -175,23 +173,19 @@ export default function NarrativeCharts({ data }: { data: NarrativeOverview }) {
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <p className="muted">Sin términos del banco en este recorte.</p>
+          <p className="muted">{t("nar.noTerms")}</p>
         )}
       </ChartFrame>
 
       <ChartFrame
-        title="Cómo evolucionan los relatos"
-        howto={[
-          "Cada línea es un relato agrupado, no una enfermedad.",
-          "El eje es tiempo real de las notas (meses si el recorte es largo); se ocultan los años vacíos.",
-          "Un pico pide atención. No declara que el relato sea falso.",
-        ]}
+        title={t("nar.evoTitle")}
+        howto={[t("nar.evo1"), t("nar.evo2"), t("nar.evo3")]}
         caption={
           peak
-            ? `Pico: ${peak.label} el ${peak.day} (${peak.count} notas).`
+            ? `${t("nar.peak")} ${peak.label} ${peak.day} (${peak.count}).`
             : stories.length
               ? null
-              : "Aún no hay serie temporal para estos relatos."
+              : t("nar.noSeries")
         }
       >
         {timeline.length && stories.length ? (

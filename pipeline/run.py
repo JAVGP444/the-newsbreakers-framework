@@ -577,7 +577,7 @@ def run_cycle(
     persist: bool = True,
     force_due: bool | None = None,
 ) -> dict[str, Any]:
-    from config.caps import apply_cap
+    from config.license import apply_cap
 
     max_sources = apply_cap("mine", max_sources, 8)
     now = _now()

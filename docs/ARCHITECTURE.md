@@ -1,5 +1,9 @@
 # Arquitectura — The NewsBreakers (framework en Escritorio)
 
+> **Español / English.** Nota histórica de diseño. El producto vigente y la instalación están en el [`README.md`](../README.md) (español e inglés) y en `docs/install-es.pdf` / `docs/install-en.pdf`. Las rutas `C:\Users\javie\...` de este archivo ya no aplican.
+>
+> **English.** Historical design note. Current product and install live in [`README.md`](../README.md) and the install PDFs. The `C:\Users\javie\...` paths in this file no longer apply.
+
 Sistema inteligente **multimodal** de vigilancia, verificación y análisis de
 desinformación en **salud animal**. El producto vigente es
 `C:\Users\javie\OneDrive\Escritorio\Generador_Excel_Enfermedades`

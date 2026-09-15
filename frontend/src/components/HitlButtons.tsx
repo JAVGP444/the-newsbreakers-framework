@@ -1,3 +1,5 @@
+import { useLocale } from "../locale";
+
 export function HitlButtons({
   busy,
   onAct,
@@ -7,7 +9,8 @@ export function HitlButtons({
   onAct: (label: "validado" | "descartado" | "modificado") => void;
   labels?: { validado: string; descartado: string; modificado: string };
 }) {
-  const text = labels || { validado: "Se sostiene", descartado: "No aplica", modificado: "Corregir" };
+  const { t } = useLocale();
+  const text = labels || { validado: t("hitl.ok"), descartado: t("hitl.no"), modificado: t("hitl.fix") };
   return (
     <div className="hitl-actions">
       <button type="button" className="run" disabled={busy} onClick={() => onAct("validado")}>

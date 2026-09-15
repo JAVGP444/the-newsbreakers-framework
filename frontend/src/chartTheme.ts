@@ -25,10 +25,16 @@ export const VERDICT_COLOR: Record<string, string> = {
   Contradicho: "#D55E00",
   revision_humana: "#CC79A7",
   "Revisión humana": "#CC79A7",
+  "Human review": "#CC79A7",
   enganoso: "#F0E442",
   "Posiblemente engañoso": "#F0E442",
+  "Possibly misleading": "#F0E442",
   sin_verificar: "#7a7a7a",
   "Sin verificar": "#7a7a7a",
+  Unverified: "#7a7a7a",
+  Supported: "#0072B2",
+  Insufficient: "#E69F00",
+  Contradicted: "#D55E00",
 };
 
 export const STANCE_COLOR: Record<string, string> = {
@@ -38,6 +44,7 @@ export const STANCE_COLOR: Record<string, string> = {
   Contradicho: "#D55E00",
   Unknown: "#7a7a7a",
   "Sin verificar": "#7a7a7a",
+  Unverified: "#7a7a7a",
 };
 
 export const AXIS = "#c5d5dc";

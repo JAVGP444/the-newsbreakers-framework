@@ -1,4 +1,8 @@
-# Trazabilidad
+# Trazabilidad / Traceability
+
+> **Español.** Cada alerta debe poder responder: **¿por qué The NewsBreakers llegó a esta conclusión?** Si no se puede reconstruir, no se publica.
+>
+> **English.** Every alert must answer: **why did The NewsBreakers reach this conclusion?** If it cannot be reconstructed, it is not published.
 
 Cada alerta debe poder responder: **¿por qué The NewsBreakers llegó a esta
 conclusión?** Si no se puede reconstruir, no se publica.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   api,
   type AlertRow,
@@ -25,12 +25,15 @@ import SourcesPanel from "./components/SourcesPanel";
 import { MiniBars, Sparkline } from "./components/Sparkline";
 import { articleHref } from "./safeUrl";
 import { ensureGeoPoints } from "./geoCentroids";
+import { useLocale } from "./locale";
 import {
   DISEASE_VISUAL,
-  KIND_LABEL,
   cardExcerpt,
+  diseaseUiLabel,
+  kindLabel,
   stanceLabel,
   verdictLabel,
+  type SourceKind,
 } from "./display";
 import { useTranslated } from "./translate";
 import {
@@ -44,15 +47,6 @@ import {
 } from "./filters";
 
 const PAGE_SIZE = 12;
-const VERDICTS = [
-  { id: "", label: "Veredicto" },
-  { id: "respaldado", label: "Respaldado" },
-  { id: "insuficiente", label: "Insuficiente" },
-  { id: "contradicho", label: "Contradicho" },
-  { id: "revision_humana", label: "Revisión humana" },
-  { id: "engañoso", label: "Engañoso" },
-  { id: "sin_verificar", label: "Sin verificar" },
-];
 
 type Panel = "sala" | "revision" | "mapa" | "graficas" | "grafo" | "fuentes";
 
@@ -79,27 +73,30 @@ function filterChipText(
   value: string,
   diseases: DiseaseCard[],
   countries: [string, string][],
-  sourceNames: Map<string, string>
+  sourceNames: Map<string, string>,
+  lang: "es" | "en",
+  t: (key: string, vars?: Record<string, string | number>) => string
 ) {
   if (key === "disease") {
     const d = diseases.find((x) => x.id === value);
-    return chipLabel(key, d?.short || d?.label || DISEASE_VISUAL[value]?.label || value.replace(/_/g, " "));
+    return chipLabel(key, diseaseUiLabel(value, d?.short || d?.label || DISEASE_VISUAL[value]?.label || value.replace(/_/g, " "), lang), t);
   }
   if (key === "country") {
     const name = countries.find(([code]) => code === value)?.[1];
-    return chipLabel(key, name || value);
+    return chipLabel(key, name || value, t);
   }
-  if (key === "source") return chipLabel(key, sourceNames.get(value) || value);
-  if (key === "origin") return chipLabel(key, KIND_LABEL[value as keyof typeof KIND_LABEL] || value);
-  if (key === "stance") return chipLabel(key, stanceLabel(value));
-  if (key === "verdict") return chipLabel(key, verdictLabel(value));
-  return chipLabel(key, value);
+  if (key === "source") return chipLabel(key, sourceNames.get(value) || value, t);
+  if (key === "origin") return chipLabel(key, kindLabel(value as SourceKind, lang) || value, t);
+  if (key === "stance") return chipLabel(key, stanceLabel(value, lang), t);
+  if (key === "verdict") return chipLabel(key, verdictLabel(value, lang), t);
+  return chipLabel(key, value, t);
 }
 
 export default function Observatory() {
   const location = useLocation();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  const { t, lang } = useLocale();
   const panel = panelFromPath(location.pathname);
   const filters = useMemo(() => readFilters(params), [params]);
   const query = filtersToApiQuery(filters);
@@ -147,7 +144,7 @@ export default function Observatory() {
       const ok = <T,>(i: number): T | null =>
         results[i].status === "fulfilled" ? (results[i].value as T) : null;
       if (results.every((r) => r.status === "rejected")) {
-        setErr("No se pudo conectar con el servidor. Inténtalo de nuevo en unos segundos.");
+        setErr(t("err.connect"));
         return;
       }
       setErr("");
@@ -188,7 +185,7 @@ export default function Observatory() {
       if (gr) setGraph(gr);
       if (srcs) setSources(srcs.sources || []);
     } catch {
-      setErr("No se pudo conectar con el servidor. Inténtalo de nuevo en unos segundos.");
+      setErr(t("err.connect"));
     }
     try {
       const al = await api.alerts("pending_review");
@@ -197,7 +194,7 @@ export default function Observatory() {
     } catch {
       /* conservar la cola que ya se ve */
     }
-  }, [query, filters.page]);
+  }, [query, filters.page, t]);
 
   useEffect(() => {
     load();
@@ -237,13 +234,19 @@ export default function Observatory() {
 
   async function runCycle() {
     setBusy(true);
-    setNote("Recolectando y analizando noticias…");
+    setNote(t("cycle.collecting"));
     try {
       const summary = await api.cycle();
-      setNote(`Fuentes revisadas ${summary.sources_checked} · artículos nuevos ${summary.articles_new} · afirmaciones ${summary.claims}`);
+      setNote(
+        t("cycle.done", {
+          sources: summary.sources_checked,
+          articles: summary.articles_new,
+          claims: summary.claims,
+        })
+      );
       await load();
     } catch {
-      setNote("El ciclo no se pudo completar. Inténtalo de nuevo.");
+      setNote(t("cycle.fail"));
     } finally {
       setBusy(false);
     }
@@ -272,12 +275,12 @@ export default function Observatory() {
   }
 
   const titles: Record<Panel, { title: string; subtitle: string }> = {
-    sala: { title: "Sala de vigilancia", subtitle: "Documentos y relatos agrupados, por fecha de publicación." },
-    revision: { title: "Revisión", subtitle: "Una nota a la vez: afirmación, evidencia, decisión." },
-    mapa: { title: "Mapa de menciones", subtitle: "Lugares que nombran las notas. Pulsa un punto y ábrelo en la sala." },
-    graficas: { title: "Gráficas", subtitle: "Volumen, veredictos y evolución de los relatos. Una palabra no declara falsedad." },
-    grafo: { title: "Grafo", subtitle: "Puntos unidos por notas en común. Pulsa uno y ábrelo en la sala." },
-    fuentes: { title: "Fuentes", subtitle: "Catálogo, las que sí se usaron en el contraste, y el banco de términos." },
+    sala: { title: t("sala.title"), subtitle: t("sala.subtitle") },
+    revision: { title: t("revision.title"), subtitle: t("revision.subtitle") },
+    mapa: { title: t("mapa.title"), subtitle: t("mapa.subtitle") },
+    graficas: { title: t("graficas.title"), subtitle: t("graficas.subtitle") },
+    grafo: { title: t("grafo.title"), subtitle: t("grafo.subtitle") },
+    fuentes: { title: t("fuentes.title"), subtitle: t("fuentes.subtitle") },
   };
 
   const capture = kpis;
@@ -291,7 +294,7 @@ export default function Observatory() {
         subtitle={titles[panel].subtitle}
         actions={
           <button type="button" className="run" disabled={busy} onClick={runCycle}>
-            {busy ? "Ciclo en curso…" : "Ejecutar ciclo"}
+            {busy ? t("cycle.busy") : t("cycle.run")}
           </button>
         }
       />
@@ -300,19 +303,19 @@ export default function Observatory() {
       {panel !== "sala" && !focus && note && <p className="banner">{note}</p>}
       {panel !== "sala" && !focus ? (
       <p className={bannerClass}>
-        {mine?.last_mine ? `Última minería: ${formatMineTime(mine.last_mine)}` : "Aún no hay corrida de minería"}
+        {mine?.last_mine ? t("mine.last", { time: formatMineTime(mine.last_mine) }) : t("mine.none")}
         {" · "}
         {capture?.docs != null
-          ? `${capture.docs} documentos · ${capture.rss ?? 0} de RSS · ${capture.no_body ?? 0} sin texto`
+          ? t("mine.docs", { docs: capture.docs, rss: capture.rss ?? 0, nobody: capture.no_body ?? 0 })
           : kpis
-            ? `${kpis.articles} artículos · ${kpis.claims} afirmaciones`
+            ? t("mine.kpis", { articles: kpis.articles, claims: kpis.claims })
             : ""}
         {" · "}
         {mysqlStale
-          ? `MySQL atrasado${kpis?.mysql_lag_seconds != null ? ` (${kpis.mysql_lag_seconds}s)` : ""}`
+          ? `${t("mysql.lag")}${kpis?.mysql_lag_seconds != null ? ` (${kpis.mysql_lag_seconds}s)` : ""}`
           : mysqlOn
-            ? "MySQL conectado"
-            : "MySQL no conectado (SQLite)"}
+            ? t("mysql.on")
+            : t("mysql.off")}
       </p>
       ) : null}
 
@@ -322,20 +325,20 @@ export default function Observatory() {
           {note ? <p className="banner">{note}</p> : null}
         </>
       ) : !focus ? (
-      <section className="kpis" aria-label="Indicadores">
-        <Kpi label="Artículos" value={kpis?.articles ?? "—"} series={sparks.articles} />
-        <Kpi label="Afirmaciones" value={kpis?.claims ?? "—"} series={sparks.articles} color="#34d399" bars />
-        <Kpi label="Alertas pendientes" value={kpis?.alerts_pending ?? "—"} series={sparks.articles} color="#f87171" accent />
-        <Kpi label="Fuentes" value={kpis?.sources ?? "—"} series={sparks.articles} />
+      <section className="kpis" aria-label={t("kpi.aria")}>
+        <Kpi label={t("kpi.articles")} value={kpis?.articles ?? "—"} series={sparks.articles} />
+        <Kpi label={t("kpi.claims")} value={kpis?.claims ?? "—"} series={sparks.articles} color="#34d399" bars />
+        <Kpi label={t("kpi.alerts")} value={kpis?.alerts_pending ?? "—"} series={sparks.articles} color="#f87171" accent />
+        <Kpi label={t("kpi.sources")} value={kpis?.sources ?? "—"} series={sparks.articles} />
       </section>
       ) : null}
 
       {!focus ? (
       <>
       <div className="toolbar">
-        <div className="disease-pills" role="group" aria-label="Filtro por enfermedad">
+        <div className="disease-pills" role="group" aria-label={t("filter.diseaseAria")}>
           <button type="button" className={!filters.disease ? "pill-btn on" : "pill-btn"} onClick={() => patchFilters({ disease: null, page: 1 })}>
-            Todas
+            {t("filter.all")}
           </button>
           {pills.map((d) => (
             <button
@@ -344,29 +347,29 @@ export default function Observatory() {
               className={filters.disease === d.id ? "pill-btn on" : "pill-btn"}
               onClick={() => patchFilters({ disease: d.id, page: 1 })}
             >
-              {d.short || d.label}
+              {diseaseUiLabel(d.id, d.short || d.label, lang)}
               <b>{d.menciones}</b>
             </button>
           ))}
           {other && other.menciones > 0 ? (
             <button type="button" className={filters.disease === "otras" ? "pill-btn on" : "pill-btn"} onClick={() => patchFilters({ disease: "otras", page: 1 })}>
-              Otras <b>{other.menciones}</b>
+              {t("filter.other")} <b>{other.menciones}</b>
             </button>
           ) : null}
         </div>
         <div className="filter-row">
           <label>
-            Desde
+            {t("filter.from")}
             <input type="date" value={filters.from || ""} onChange={(e) => patchFilters({ from: e.target.value || null, page: 1 })} />
           </label>
           <label>
-            Hasta
+            {t("filter.to")}
             <input type="date" value={filters.to || ""} onChange={(e) => patchFilters({ to: e.target.value || null, page: 1 })} />
           </label>
           <label>
-            País
+            {t("filter.country")}
             <select value={filters.country || ""} onChange={(e) => patchFilters({ country: e.target.value || null, page: 1 })}>
-              <option value="">Todos</option>
+              <option value="">{t("filter.allM")}</option>
               {countries.map(([code, name]) => (
                 <option key={code} value={code}>
                   {name}
@@ -375,9 +378,17 @@ export default function Observatory() {
             </select>
           </label>
           <label>
-            Veredicto
+            {t("filter.verdict")}
             <select value={filters.verdict || ""} onChange={(e) => patchFilters({ verdict: e.target.value || null, page: 1 })}>
-              {VERDICTS.map((v) => (
+              {[
+                { id: "", label: t("filter.verdict") },
+                { id: "respaldado", label: t("verdict.respaldado") },
+                { id: "insuficiente", label: t("verdict.insuficiente") },
+                { id: "contradicho", label: t("verdict.contradicho") },
+                { id: "revision_humana", label: t("verdict.humana") },
+                { id: "engañoso", label: t("verdict.enganoso") },
+                { id: "sin_verificar", label: t("verdict.sin") },
+              ].map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.label}
                 </option>
@@ -385,9 +396,9 @@ export default function Observatory() {
             </select>
           </label>
           <label>
-            Fuente
+            {t("filter.source")}
             <select value={filters.source || ""} onChange={(e) => patchFilters({ source: e.target.value || null, page: 1 })}>
-              <option value="">Todas</option>
+              <option value="">{t("filter.all")}</option>
               {sources
                 .filter((s) => (s.article_count || 0) > 0)
                 .slice(0, 80)
@@ -399,10 +410,10 @@ export default function Observatory() {
             </select>
           </label>
           <label className="search-box">
-            <span className="sr-only">Buscar</span>
+            <span className="sr-only">{t("filter.searchAria")}</span>
             <input
               type="search"
-              placeholder="Buscar título, fuente o texto…"
+              placeholder={t("filter.searchPlaceholder")}
               value={filters.q || ""}
               onChange={(e) => patchFilters({ q: e.target.value, page: 1 })}
             />
@@ -413,11 +424,11 @@ export default function Observatory() {
         <p className="filter-chips">
           {chips.map((c) => (
             <button key={String(c.key)} type="button" className="chip on" onClick={() => patchFilters({ [c.key]: c.key === "compare" ? [] : null, page: 1 })}>
-              {filterChipText(c.key, c.value, diseases, countries, sourceNames)} ×
+              {filterChipText(c.key, c.value, diseases, countries, sourceNames, lang, t)} ×
             </button>
           ))}
           <button type="button" className="chip" onClick={() => setParams(new URLSearchParams(), { replace: true })}>
-            Limpiar
+            {t("filter.clearShort")}
           </button>
         </p>
       ) : null}
@@ -516,6 +527,7 @@ function ArticleGrid({
   onPage: (n: number) => void;
   onClear: () => void;
 }) {
+  const { t } = useLocale();
   const titles = articles.map((a) => a.title || a.url || a.content_id);
   const summaries = articles.map((a) => cardExcerpt(a.text, a.title));
   const tTitles = useTranslated(titles);
@@ -524,7 +536,7 @@ function ArticleGrid({
   return (
     <section className="sala-list">
         <p className="muted list-count">
-        {total} documentos
+        {t("sala.docs", { n: total })}
       </p>
       <div className="art-cards">
         {articles.map((a, i) => (
@@ -537,25 +549,25 @@ function ArticleGrid({
           />
         ))}
       </div>
-      {!articles.length && dbEmpty && <p className="muted">Aún no hay documentos. Ejecuta un ciclo desde la sala.</p>}
+      {!articles.length && dbEmpty && <p className="muted">{t("empty.docs")}</p>}
       {!articles.length && !dbEmpty && (
         <p className="muted">
-          0 documentos con este filtro.{" "}
+          {t("sala.zeroFilter")}{" "}
           <button type="button" className="chip" onClick={onClear}>
-            Limpiar
+            {t("filter.clearShort")}
           </button>
         </p>
       )}
       {pageCount > 1 && (
         <div className="pager">
           <button type="button" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-            Anterior
+            {t("filter.prev")}
           </button>
           <span>
             {page} / {pageCount}
           </span>
           <button type="button" disabled={page >= pageCount} onClick={() => onPage(page + 1)}>
-            Siguiente
+            {t("filter.next")}
           </button>
         </div>
       )}

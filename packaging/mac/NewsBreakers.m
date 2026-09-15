@@ -59,7 +59,7 @@ static int tnb_free_port(void) {
 
 - (void)fail:(NSString *)msg {
     NSAlert *a = [[NSAlert alloc] init];
-    a.messageText = @"NewsBreakers 2.59.54 a.m.";
+    a.messageText = @"The NewsBreakers";
     a.informativeText = msg;
     [a runModal];
     [NSApp terminate:nil];
@@ -68,7 +68,7 @@ static int tnb_free_port(void) {
 - (BOOL)installFromDiskImageIfNeeded {
     NSString *bundle = [[NSBundle mainBundle] bundlePath];
     if (![bundle hasPrefix:@"/Volumes/"]) return NO;
-    NSString *dest = [NSHomeDirectory() stringByAppendingPathComponent:@"Desktop/NewsBreakers 2.59.54 a.m..app"];
+    NSString *dest = [NSHomeDirectory() stringByAppendingPathComponent:@"Desktop/NewsBreakers.app"];
     [[NSFileManager defaultManager] createDirectoryAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Applications"]
                               withIntermediateDirectories:YES
                                                attributes:nil
@@ -94,9 +94,9 @@ static int tnb_free_port(void) {
     NSMenu *bar = [[NSMenu alloc] init];
     NSMenuItem *appItem = [[NSMenuItem alloc] init];
     [bar addItem:appItem];
-    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"NewsBreakers"];
-    [appMenu addItemWithTitle:@"Ocultar NewsBreakers" action:@selector(hide:) keyEquivalent:@"h"];
-    [appMenu addItemWithTitle:@"Salir de NewsBreakers" action:@selector(terminate:) keyEquivalent:@"q"];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"The NewsBreakers"];
+    [appMenu addItemWithTitle:@"Ocultar The NewsBreakers" action:@selector(hide:) keyEquivalent:@"h"];
+    [appMenu addItemWithTitle:@"Salir de The NewsBreakers" action:@selector(terminate:) keyEquivalent:@"q"];
     appItem.submenu = appMenu;
 
     NSMenuItem *editItem = [[NSMenuItem alloc] init];
@@ -115,7 +115,7 @@ static int tnb_free_port(void) {
                                                          NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
-    self.window.title = @"NewsBreakers 2.59.54 a.m.";
+    self.window.title = @"The NewsBreakers";
     self.window.minSize = NSMakeSize(880, 600);
     self.window.delegate = self;
     self.window.backgroundColor = [NSColor colorWithRed:0.024 green:0.051 blue:0.078 alpha:1];
@@ -151,7 +151,7 @@ static int tnb_free_port(void) {
     [prep waitUntilExit];
     if (prep.terminationStatus != 0) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self fail:@"No pude preparar NewsBreakers. Revisa ~/Library/Logs/NewsBreakers.log"];
+            [self fail:@"No pude preparar The NewsBreakers. Revisa ~/Library/Logs/NewsBreakers.log"];
         });
         return;
     }

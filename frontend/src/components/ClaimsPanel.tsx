@@ -51,7 +51,7 @@ export default function ClaimsPanel() {
                 <td>{c.subject || "—"}</td>
                 <td>{c.predicate || "—"}</td>
                 <td>{c.modality || "—"}</td>
-                <td>{c.nli_label || c.verdict || "pendiente"}</td>
+                <td>{c.nli_label || "—"}</td>
               </tr>
             ))}
           </tbody>

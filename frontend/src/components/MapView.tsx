@@ -8,6 +8,7 @@ import type { GeoRow } from "../api";
 import { mapDiseaseStyle, riskHint } from "../display";
 import { plottablePoints, pointKey } from "../geoCentroids";
 import { articleHref } from "../safeUrl";
+import { useLocale } from "../locale";
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({ iconRetinaUrl, iconUrl, shadowUrl });
@@ -47,6 +48,7 @@ export default function MapView({
   censor = false,
   compact = false,
 }: Props) {
+  const { t, lang } = useLocale();
   const hostRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<Map<string, MarkerMeta>>(new Map());
@@ -68,7 +70,7 @@ export default function MapView({
       const bounds: L.LatLngExpression[] = [];
       for (const p of rows) {
         if (p.lat == null || p.lng == null) continue;
-        const style = mapDiseaseStyle(diseaseOf(p));
+        const style = mapDiseaseStyle(diseaseOf(p), lang);
         const hot = (p.risk_mean || 0) >= 70;
         const weight = hot ? 2.5 : 1.5;
         const stroke = hot ? "#f59e0b" : style.stroke;
@@ -84,12 +86,12 @@ export default function MapView({
         markersRef.current.set(key, { circle, stroke, weight });
         if (censor) {
           circle.bindPopup(
-            `<div class="obs-pop"><strong>Censurado</strong><span>Hay cobertura aquí. El país se abre con la clave.</span></div>`
+            `<div class="obs-pop"><strong>${escapeHtml(t("map.censorTitle"))}</strong><span>${escapeHtml(t("map.censorBody"))}</span></div>`
           );
         } else {
-          const disease = mapDiseaseStyle(diseaseOf(p)).label;
-          const risk = p.risk_mean != null ? ` · riesgo ${riskHint(p.risk_mean)}` : "";
-          const grain = p.grain === "place" ? "lugar nombrado en las notas" : "país";
+          const disease = mapDiseaseStyle(diseaseOf(p), lang).label;
+          const risk = p.risk_mean != null ? ` · ${t("map.riskWord")} ${riskHint(p.risk_mean, lang)}` : "";
+          const grain = p.grain === "place" ? t("map.grain.named") : t("map.grain.countryShort");
           const arts = (p.articles || [])
             .slice(0, 3)
             .map(
@@ -98,16 +100,16 @@ export default function MapView({
             )
             .join("");
           circle.bindPopup(
-            `<div class="obs-pop"><strong>${escapeHtml(p.name)}</strong><span>${p.count} notas · ${escapeHtml(
-              disease
-            )}${escapeHtml(risk)}. Es un ${grain}, no un foco oficial.</span>${arts}</div>`
+            `<div class="obs-pop"><strong>${escapeHtml(p.name)}</strong><span>${escapeHtml(
+              t("map.pop.line", { n: p.count, disease, risk, grain })
+            )}</span>${arts}</div>`
           );
           circle.on("click", () => onSelectRef.current?.(p));
         }
         bounds.push([p.lat, p.lng]);
       }
       if (focus) {
-        L.marker([focus.lat, focus.lng]).addTo(map).bindPopup(focus.label || "Ubicación");
+        L.marker([focus.lat, focus.lng]).addTo(map).bindPopup(focus.label || t("article.place"));
         map.setView([focus.lat, focus.lng], compact ? 4 : 6);
       } else if (bounds.length === 1) {
         map.setView(bounds[0], compact ? 3 : 5);
@@ -176,7 +178,7 @@ export default function MapView({
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [points, focus, censor, compact]);
+  }, [points, focus, censor, compact, lang, t]);
 
   useEffect(() => {
     const id = selectedId;

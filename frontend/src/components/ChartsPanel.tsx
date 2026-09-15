@@ -15,8 +15,9 @@ import {
 } from "recharts";
 import type { ChartBundle, ChartFilter } from "../api";
 import { AXIS, CHART_MARGIN, DISEASE_COLOR, GRID, ORIGIN_COLOR, TICK, VERDICT_COLOR, seriesColor } from "../chartTheme";
-import { shortChartDate, verdictLabel } from "../display";
+import { shortChartDate, verdictLabel, diseaseUiLabel, kindLabel, type SourceKind } from "../display";
 import { filtersToSearch, type ObservatoryFilters } from "../filters";
+import { useLocale } from "../locale";
 import LeerMas from "./LeerMas";
 
 type Slice = { id: string; name?: string; label: string; count: number; filter?: ChartFilter; pct?: number; barLabel?: string };
@@ -39,10 +40,11 @@ export function ChartFrame({
   caption?: string | null;
   children: ReactNode;
 }) {
+  const { t } = useLocale();
   return (
     <section className="viz">
       <h3>{title}</h3>
-      <p className="chart-howto-label">Cómo leerlo</p>
+      <p className="chart-howto-label">{t("charts.howto")}</p>
       <LeerMas maxItems={1} className="chart-howto-wrap">
         {howto.map((line) => (
           <p key={line} className="chart-explain">
@@ -63,20 +65,21 @@ function EmptyChart({
   dbEmpty?: boolean;
   onClear: () => void;
 }) {
+  const { t } = useLocale();
   if (dbEmpty) {
     return (
       <section className="viz wide chart-empty">
-        <h3>Aún no hay minería</h3>
-        <p>No hay notas todavía. Ejecuta un ciclo desde la sala.</p>
+        <h3>{t("charts.noMine")}</h3>
+        <p>{t("charts.noMineBody")}</p>
       </section>
     );
   }
   return (
     <section className="viz wide chart-empty">
-      <h3>Este recorte no deja notas</h3>
-      <p>Prueba a quitar filtros para volver a ver el panorama.</p>
+      <h3>{t("charts.noCut")}</h3>
+      <p>{t("charts.noCutBody")}</p>
       <button type="button" className="run" onClick={onClear}>
-        Limpiar filtros
+        {t("filter.clear")}
       </button>
     </section>
   );
@@ -119,7 +122,7 @@ function weekMonday(iso: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-function ingestCaption(data: ChartBundle, n: number): string | null {
+function ingestCaption(data: ChartBundle, n: number, lang: "es" | "en", t: (k: string, v?: Record<string, string | number>) => string): string | null {
   const days = (data.by_day?.length ? data.by_day : data.volume_by_day || []).filter((d) => Number(d.count) > 0);
   if (days.length < 2 || n < 4) return null;
   const weeks = new Map<string, number>();
@@ -139,7 +142,7 @@ function ingestCaption(data: ChartBundle, n: number): string | null {
   if (!topKey || topN / n < 0.45) return null;
   const mineHit = (data.annotations || []).some((a) => a.kind === "mine" && weekMonday(a.day) === topKey);
   if (!mineHit) return null;
-  return `La mayoría se concentró en la semana del ${shortChartDate(topKey)}: suele ser el día en que el sistema las guardó, no siempre el día de publicación.`;
+  return t("charts.ingest", { date: shortChartDate(topKey, lang) });
 }
 
 function DoorTip({
@@ -153,6 +156,7 @@ function DoorTip({
   unit: string;
   onGo: (filter?: ChartFilter) => void;
 }) {
+  const { t } = useLocale();
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload || { id: "", label: "", count: 0 };
   const count = Number(row.count ?? payload[0]?.value ?? 0);
@@ -165,7 +169,7 @@ function DoorTip({
         {pct}
       </strong>
       <button type="button" onClick={() => onGo(row.filter)}>
-        Ver las {count} en la sala
+        {t("charts.goSala", { n: count })}
       </button>
     </div>
   );
@@ -181,6 +185,7 @@ function pieLabel(props: { name?: string; percent?: number; value?: number }) {
 
 export default function ChartsPanel({ data, filters, onPatch }: Props) {
   const navigate = useNavigate();
+  const { t, lang } = useLocale();
 
   function goSala(extra?: ChartFilter) {
     navigate({ pathname: "/", search: salaSearch(filters, extra) });
@@ -188,26 +193,40 @@ export default function ChartsPanel({ data, filters, onPatch }: Props) {
 
   const n = data?.n ?? 0;
   const diseases = useMemo(
-    () => withPct(data?.volume_by_disease || [], n),
-    [data?.volume_by_disease, n]
+    () =>
+      withPct(
+        (data?.volume_by_disease || []).map((row) => ({
+          ...row,
+          label: diseaseUiLabel(row.id, row.label || row.name, lang),
+        })),
+        n
+      ),
+    [data?.volume_by_disease, n, lang]
   );
   const origins = useMemo(
-    () => withPct(data?.volume_by_origin || [], n),
-    [data?.volume_by_origin, n]
+    () =>
+      withPct(
+        (data?.volume_by_origin || []).map((row) => ({
+          ...row,
+          label: kindLabel((row.id as SourceKind) || "prensa", lang) || row.label || row.name || row.id,
+        })),
+        n
+      ),
+    [data?.volume_by_origin, n, lang]
   );
   const verdicts = useMemo(
     () =>
       withPct(
         (data?.volume_by_verdict || []).map((row) => ({
           ...row,
-          label: verdictLabel(row.label || row.name || row.id),
+          label: verdictLabel(row.label || row.name || row.id, lang),
         })),
         n
       ),
-    [data?.volume_by_verdict, n]
+    [data?.volume_by_verdict, n, lang]
   );
 
-  if (!data) return <p className="muted">Cargando gráficas…</p>;
+  if (!data) return <p className="muted">{t("charts.loading")}</p>;
   if (data.empty || !n) {
     return (
       <EmptyChart
@@ -229,18 +248,16 @@ export default function ChartsPanel({ data, filters, onPatch }: Props) {
     );
   }
 
-  const caption = ingestCaption(data, n);
+  const caption = ingestCaption(data, n, lang, t);
   const rankH = Math.max(240, diseases.length * 44 + 24);
+  const notesUnit = t("charts.notes");
+  const notesName = t("charts.notesName");
 
   return (
     <div className="chart-stack">
       <ChartFrame
-        title="¿De qué enfermedades hablan?"
-        howto={[
-          "Cada barra es una enfermedad, no un día.",
-          "El número es cuántas notas la mencionan; el % es su parte del total.",
-          "Una nota puede hablar de más de una. Pulsa una barra para verlas en la sala.",
-        ]}
+        title={t("charts.diseaseTitle")}
+        howto={[t("charts.disease1"), t("charts.disease2"), t("charts.disease3")]}
         caption={caption}
       >
         {diseases.length ? (
@@ -249,8 +266,8 @@ export default function ChartsPanel({ data, filters, onPatch }: Props) {
               <CartesianGrid stroke={GRID} horizontal={false} />
               <XAxis type="number" hide />
               <YAxis type="category" dataKey="label" width={150} tick={TICK} interval={0} />
-              <Tooltip content={<DoorTip unit="notas" onGo={goSala} />} />
-              <Bar dataKey="count" name="Notas" radius={[0, 4, 4, 0]} cursor="pointer" onClick={(row) => goSala((row as Slice)?.filter)}>
+              <Tooltip content={<DoorTip unit={notesUnit} onGo={goSala} />} />
+              <Bar dataKey="count" name={notesName} radius={[0, 4, 4, 0]} cursor="pointer" onClick={(row) => goSala((row as unknown as Slice)?.filter)}>
                 {diseases.map((row, i) => (
                   <Cell key={row.id} fill={DISEASE_COLOR[row.id] || seriesColor(row.id, i)} />
                 ))}
@@ -259,17 +276,13 @@ export default function ChartsPanel({ data, filters, onPatch }: Props) {
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <p className="muted">No se identificó ninguna enfermedad en este recorte.</p>
+          <p className="muted">{t("charts.noDisease")}</p>
         )}
       </ChartFrame>
 
       <ChartFrame
-        title="¿De dónde sale el contenido?"
-        howto={[
-          "Oficial: gobiernos y organismos (SENASICA, OMSA, CDC…).",
-          "Científico: artículos y bases académicas. Redes y YouTube son publicaciones en redes o video.",
-          "Prensa son medios de noticias. Pulsa una barra para ver solo ese origen.",
-        ]}
+        title={t("charts.originTitle")}
+        howto={[t("charts.origin1"), t("charts.origin2"), t("charts.origin3")]}
       >
         {origins.length ? (
           <ResponsiveContainer width="100%" height={280}>
@@ -277,8 +290,8 @@ export default function ChartsPanel({ data, filters, onPatch }: Props) {
               <CartesianGrid stroke={GRID} vertical={false} />
               <XAxis dataKey="label" tick={TICK} interval={0} height={46} />
               <YAxis tick={TICK} allowDecimals={false} width={40} />
-              <Tooltip content={<DoorTip unit="notas" onGo={goSala} />} />
-              <Bar dataKey="count" name="Notas" radius={[4, 4, 0, 0]} cursor="pointer" onClick={(row) => goSala((row as Slice)?.filter)}>
+              <Tooltip content={<DoorTip unit={notesUnit} onGo={goSala} />} />
+              <Bar dataKey="count" name={notesName} radius={[4, 4, 0, 0]} cursor="pointer" onClick={(row) => goSala((row as unknown as Slice)?.filter)}>
                 {origins.map((row) => (
                   <Cell key={row.id} fill={ORIGIN_COLOR[row.id] || "#7a7a7a"} />
                 ))}
@@ -287,17 +300,13 @@ export default function ChartsPanel({ data, filters, onPatch }: Props) {
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <p className="muted">No hay origen clasificado en este recorte.</p>
+          <p className="muted">{t("charts.noOrigin")}</p>
         )}
       </ChartFrame>
 
       <ChartFrame
-        title="¿Qué concluyó el análisis?"
-        howto={[
-          "Respaldado: hay evidencia a favor. Contradicho: la evidencia lo niega.",
-          "Insuficiente: no alcanza para decidir. Revisión humana: alguien debe mirarlo.",
-          "Pulsa un color para abrir esos casos en la sala.",
-        ]}
+        title={t("charts.verdictTitle")}
+        howto={[t("charts.verdict1"), t("charts.verdict2"), t("charts.verdict3")]}
         caption={data.risk_note || undefined}
       >
         {verdicts.length ? (
@@ -312,17 +321,17 @@ export default function ChartsPanel({ data, filters, onPatch }: Props) {
                 paddingAngle={3}
                 label={pieLabel}
                 labelLine
-                onClick={(row) => goSala((row as Slice)?.filter)}
+                onClick={(row) => goSala((row as unknown as Slice)?.filter)}
               >
                 {verdicts.map((row) => (
                   <Cell key={row.id} fill={VERDICT_COLOR[row.id] || VERDICT_COLOR[row.label] || "#7a7a7a"} />
                 ))}
               </Pie>
-              <Tooltip content={<DoorTip unit="notas" onGo={goSala} />} />
+              <Tooltip content={<DoorTip unit={notesUnit} onGo={goSala} />} />
             </PieChart>
           </ResponsiveContainer>
         ) : (
-          <p className="muted">Todavía no hay un veredicto en este recorte.</p>
+          <p className="muted">{t("charts.noVerdict")}</p>
         )}
       </ChartFrame>
     </div>

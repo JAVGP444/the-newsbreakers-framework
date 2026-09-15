@@ -13,22 +13,23 @@ import { API, api, type CnnMetrics, type CnnPredict, type CnnRealSample } from "
 import AppHeader from "./components/AppHeader";
 import { SoftmaxBars } from "./components/ImageCard";
 import LeerMas from "./components/LeerMas";
+import { useLocale } from "./locale";
 
 const TICK = { fill: "#9fb4c4", fontSize: 12 };
 const TOOL = { background: "#0b1724", border: "1px solid #1e3a4c", color: "#e8f4f8" };
 
-const IMAGE_TYPES: { id: string; label: string; use: string }[] = [
-  { id: "OFFICIAL_DOCUMENT", label: "Documento oficial", use: "Puede ser un acta o comunicado. Aun así hay que contrastar el texto." },
-  { id: "NEWS_SCREENSHOT", label: "Captura de noticia", use: "Es la foto de una nota, no el boletín. Contrasta lo que afirma." },
-  { id: "SOCIAL_MEDIA", label: "Red social", use: "Suele ir recortada. No la tomes como fuente completa." },
-  { id: "MEME", label: "Meme", use: "Humor o montaje. No sirve como prueba." },
-  { id: "INFOGRAPHIC", label: "Infografía", use: "Cifras en la imagen. Verifícalas en una fuente oficial." },
-  { id: "ANIMAL_HEALTH_CONTENT", label: "Foto de animal o enfermedad", use: "Ilustra el tema. No confirma el brote por sí sola." },
-  { id: "PHOTOGRAPH", label: "Fotografía", use: "Foto común. Mira si la misma imagen aparece en otras notas." },
-  { id: "POTENTIALLY_MANIPULATED", label: "Posible manipulación", use: "No te fíes del recuadro. Pásala a revisión humana." },
-];
-
 export default function CnnLab() {
+  const { t } = useLocale();
+  const types = [
+    "OFFICIAL_DOCUMENT",
+    "NEWS_SCREENSHOT",
+    "SOCIAL_MEDIA",
+    "MEME",
+    "INFOGRAPHIC",
+    "ANIMAL_HEALTH_CONTENT",
+    "PHOTOGRAPH",
+    "POTENTIALLY_MANIPULATED",
+  ].map((id) => ({ id, label: t(`cnn.type.${id}`), use: t(`cnn.use.${id}`) }));
   const [metrics, setMetrics] = useState<CnnMetrics | null>(null);
   const [samples, setSamples] = useState<CnnRealSample[]>([]);
   const [samplesLoaded, setSamplesLoaded] = useState(false);
@@ -41,7 +42,7 @@ export default function CnnLab() {
     api
       .cnnMetrics()
       .then(setMetrics)
-      .catch(() => setErr("No se pudieron cargar las métricas del laboratorio."));
+      .catch(() => setErr(t("cnn.metricsFail")));
     api
       .cnnSamples(12)
       .then((res) => setSamples(res.samples || []))
@@ -69,7 +70,7 @@ export default function CnnLab() {
     try {
       setPred(await api.cnnPredictFile(file));
     } catch {
-      setErr("La predicción falló.");
+      setErr(t("cnn.predFail"));
     } finally {
       setBusy(false);
     }
@@ -84,7 +85,7 @@ export default function CnnLab() {
     try {
       setPred(await api.cnnPredictSample(id));
     } catch {
-      setErr("No se pudo clasificar la muestra.");
+      setErr(t("cnn.sampleFail"));
     } finally {
       setBusy(false);
     }
@@ -93,9 +94,6 @@ export default function CnnLab() {
   const labels = metrics?.confusion_matrix?.labels || [];
   const matrix = metrics?.confusion_matrix?.matrix || [];
   const maxCell = Math.max(1, ...matrix.flat());
-  const testAcc = metrics?.experimental_on_synthetic
-    ? null
-    : (metrics?.test_accuracy ?? metrics?.test_metrics?.test_accuracy);
   const prod = pred?.production;
   const prodAvailable = Boolean(prod?.available ?? (pred?.encoder && pred.encoder !== "unavailable" && pred.encoder !== "academic_cnn"));
   const prodLabel = prod?.label_es || pred?.label_es;
@@ -107,60 +105,48 @@ export default function CnnLab() {
   return (
     <div className="shell observatory">
       <AppHeader
-        title="Qué es esta imagen"
-        subtitle="Clasifica el tipo de foto. No dice si la noticia es verdadera."
+        title={t("cnn.title")}
+        subtitle={t("cnn.subtitle")}
       />
       {err && <p className="banner err">{err}</p>}
 
       <div className="cnn-guide">
         <section className="viz">
-          <h3>Para decidir</h3>
-          <p className="cnn-lead">
-            Cuando una nota trae foto, esto responde una sola cosa: qué clase de imagen es. Con eso sabes si
-            puedes usarla como prueba, si es un recorte o si hay que pasarla a revisión.
-          </p>
+          <h3>{t("cnn.decide")}</h3>
+          <p className="cnn-lead">{t("cnn.lead")}</p>
           <ul className="cnn-types">
-            {IMAGE_TYPES.map((t) => (
-              <li key={t.id}>
-                <strong>{t.label}</strong>
-                <span>{t.use}</span>
+            {types.map((row) => (
+              <li key={row.id}>
+                <strong>{row.label}</strong>
+                <span>{row.use}</span>
               </li>
             ))}
           </ul>
         </section>
         <section className="viz cnn-use">
-          <h3>Cómo leer el resultado</h3>
+          <h3>{t("cnn.read")}</h3>
           <ol className="cnn-rules">
             <li>
-              El porcentaje es qué tan seguro está del <em>tipo</em> de foto, no un % de que la nota sea verdad.
+              {t("cnn.rule1")}
             </li>
             <li>
-              {metrics?.production_encoder
-                ? "Hoy mira los píxeles de la foto."
-                : "Hoy no mira la foto: solo la dirección web. Sube una imagen abajo para probar."}
+              {metrics?.production_encoder ? t("cnn.rule2on") : t("cnn.rule2off")}
             </li>
             <li>
-              {metrics?.experimental_on_synthetic
-                ? "Hay un ensayo de laboratorio entrenado con dibujos. Ese % no vale para fotos de prensa: no lo uses para validar."
-                : testAcc == null
-                  ? "Si el tipo no cuadra (meme marcado como documento), no valides: corrige o pásala a revisión."
-                  : "Si el tipo no cuadra con lo que ves, no valides: corrige o pásala a revisión."}
+              {metrics?.experimental_on_synthetic ? t("cnn.rule3synth") : t("cnn.rule3")}
             </li>
           </ol>
         </section>
       </div>
 
       <details className="cnn-lab">
-        <summary>Curvas y matriz del ensayo de laboratorio</summary>
-        <p className="muted">
-          Esto no cambia lo que debes hacer con una foto de prensa. Es el entrenamiento interno: si las líneas de
-          validación se separan, el ensayo memoriza dibujos y no sirve para decidir.
-        </p>
+        <summary>{t("cnn.lab")}</summary>
+        <p className="muted">{t("cnn.labLead")}</p>
       <div className="chart-grid">
         <section className="viz">
-          <h3>Exactitud train vs validación</h3>
+          <h3>{t("cnn.accTitle")}</h3>
           <LeerMas maxLines={2} className="chart-explain">
-            Cada punto es una época. Si la línea de validación se queda atrás del entrenamiento, el modelo memoriza y no generaliza.
+            {t("cnn.accHow")}
           </LeerMas>
           <div className="chart-box">
             <ResponsiveContainer width="100%" height={300}>
@@ -169,20 +155,20 @@ export default function CnnLab() {
                 <XAxis
                   dataKey="epoch"
                   tick={TICK}
-                  label={{ value: "Época", position: "insideBottom", offset: -4, fill: "#c5d5dc", fontSize: 12 }}
+                  label={{ value: t("cnn.epoch"), position: "insideBottom", offset: -4, fill: "#c5d5dc", fontSize: 12 }}
                 />
                 <YAxis
                   tick={TICK}
                   domain={[0, 1]}
                   tickFormatter={(v) => `${Math.round(Number(v) * 100)}%`}
-                  label={{ value: "Exactitud", angle: -90, position: "insideLeft", style: { textAnchor: "middle", fill: "#c5d5dc", fontSize: 12 } }}
+                  label={{ value: t("cnn.accuracy"), angle: -90, position: "insideLeft", style: { textAnchor: "middle", fill: "#c5d5dc", fontSize: 12 } }}
                 />
                 <Tooltip
                   contentStyle={TOOL}
-                  formatter={(value, name) => [`${(Number(value) * 100).toFixed(1)} %`, name === "acc" ? "Entrenamiento" : "Validación"]}
-                  labelFormatter={(epoch) => `Época ${epoch}`}
+                  formatter={(value, name) => [`${(Number(value) * 100).toFixed(1)} %`, name === "acc" ? t("cnn.train") : t("cnn.val")]}
+                  labelFormatter={(epoch) => `${t("cnn.epoch")} ${epoch}`}
                 />
-                <Legend formatter={(v) => (v === "acc" ? "Entrenamiento" : "Validación")} />
+                <Legend formatter={(v) => (v === "acc" ? t("cnn.train") : t("cnn.val"))} />
                 <Line type="monotone" dataKey="acc" name="acc" stroke="#14b8a6" dot={false} />
                 <Line type="monotone" dataKey="val_acc" name="val_acc" stroke="#38bdf8" dot={false} />
               </LineChart>
@@ -190,9 +176,9 @@ export default function CnnLab() {
           </div>
         </section>
         <section className="viz">
-          <h3>Pérdida train vs validación</h3>
+          <h3>{t("cnn.lossTitle")}</h3>
           <LeerMas maxLines={2} className="chart-explain">
-            La pérdida (loss) debe bajar. Si validación sube mientras entrenamiento baja, hay sobreajuste.
+            {t("cnn.lossHow")}
           </LeerMas>
           <div className="chart-box">
             <ResponsiveContainer width="100%" height={300}>
@@ -201,18 +187,18 @@ export default function CnnLab() {
                 <XAxis
                   dataKey="epoch"
                   tick={TICK}
-                  label={{ value: "Época", position: "insideBottom", offset: -4, fill: "#c5d5dc", fontSize: 12 }}
+                  label={{ value: t("cnn.epoch"), position: "insideBottom", offset: -4, fill: "#c5d5dc", fontSize: 12 }}
                 />
                 <YAxis
                   tick={TICK}
-                  label={{ value: "Pérdida (loss)", angle: -90, position: "insideLeft", style: { textAnchor: "middle", fill: "#c5d5dc", fontSize: 12 } }}
+                  label={{ value: t("cnn.lossAxis"), angle: -90, position: "insideLeft", style: { textAnchor: "middle", fill: "#c5d5dc", fontSize: 12 } }}
                 />
                 <Tooltip
                   contentStyle={TOOL}
-                  formatter={(value, name) => [Number(value).toFixed(3), name === "loss" ? "Entrenamiento" : "Validación"]}
-                  labelFormatter={(epoch) => `Época ${epoch}`}
+                  formatter={(value, name) => [Number(value).toFixed(3), name === "loss" ? t("cnn.train") : t("cnn.val")]}
+                  labelFormatter={(epoch) => `${t("cnn.epoch")} ${epoch}`}
                 />
-                <Legend formatter={(v) => (v === "loss" ? "Entrenamiento" : "Validación")} />
+                <Legend formatter={(v) => (v === "loss" ? t("cnn.train") : t("cnn.val"))} />
                 <Line type="monotone" dataKey="loss" name="loss" stroke="#fbbf24" dot={false} />
                 <Line type="monotone" dataKey="val_loss" name="val_loss" stroke="#f87171" dot={false} />
               </LineChart>
@@ -222,7 +208,7 @@ export default function CnnLab() {
       </div>
 
       <section className="viz">
-        <h3>Matriz de confusión (test)</h3>
+        <h3>{t("cnn.matrix")}</h3>
         {matrix.length ? (
           <div className="cm-wrap">
             <div
@@ -257,18 +243,18 @@ export default function CnnLab() {
             </div>
           </div>
         ) : (
-          <p className="muted">Entrena el modelo para ver la matriz.</p>
+          <p className="muted">{t("cnn.noMatrix")}</p>
         )}
       </section>
       </details>
 
       <section className="viz">
-        <h3>Probar con una foto</h3>
+        <h3>{t("cnn.try")}</h3>
         <p className="muted">
-          Sube una imagen o pulsa una de abajo. El resultado es el tipo de foto, no un veredicto de verdad.
+          {t("cnn.tryLead")}
         </p>
         <label className="run file-btn file-btn-lg">
-          {busy ? "Clasificando…" : "Subir imagen"}
+          {busy ? t("cnn.classifying") : t("cnn.upload")}
           <input
             type="file"
             accept="image/*"
@@ -280,16 +266,16 @@ export default function CnnLab() {
           />
         </label>
         {samplesLoaded && samples.length === 0 ? (
-          <p className="banner">Aún no hay fotos minadas; sube una captura de noticia o un meme real</p>
+          <p className="banner">{t("cnn.noSamples")}</p>
         ) : samples.length ? (
           <>
-            <h4 className="sample-heading">Fotos reales del observatorio</h4>
-            <p className="muted">YouTube y og:image de artículos. Clic predice esa foto.</p>
+            <h4 className="sample-heading">{t("cnn.realPhotos")}</h4>
+            <p className="muted">{t("cnn.realLead")}</p>
             <div className="sample-strip">
               {samples.map((s) => (
                 <button type="button" key={s.id} className="sample-btn" onClick={() => runSample(s.id)} disabled={busy}>
-                  <img src={`${API}${s.url}`} alt={s.title || s.label_es || "foto del observatorio"} />
-                  <em>{s.origin || "noticia"}</em>
+                  <img src={`${API}${s.url}`} alt={s.title || s.label_es || t("cnn.photo")} />
+                  <em>{s.origin || t("cnn.news")}</em>
                   <span>{s.title || s.label_es}</span>
                 </button>
               ))}
@@ -298,13 +284,13 @@ export default function CnnLab() {
         ) : null}
         {(preview || pred) && (
           <div className="predict-box">
-            {preview && <img src={preview} alt="consulta" />}
+            {preview && <img src={preview} alt={t("cnn.query")} />}
             <div>
               {pred ? (
                 <>
                   {prodAvailable ? (
                     <>
-                      <p className="clip-line">Tipo de imagen propuesto</p>
+                      <p className="clip-line">{t("cnn.proposed")}</p>
                       <p>
                         <strong>{prodLabel || pred.class || "—"}</strong>{" "}
                         {prodConf != null ? (
@@ -312,7 +298,7 @@ export default function CnnLab() {
                         ) : null}
                       </p>
                       <p className="muted">
-                        Ese porcentaje es seguridad sobre el tipo de foto, no sobre si la nota es verdad.
+                        {t("cnn.pctType")}
                       </p>
                       <LeerMas maxLines={3} className="muted">
                         {pred.note || ""}
@@ -321,12 +307,11 @@ export default function CnnLab() {
                     </>
                   ) : (
                     <p className="muted">
-                      CLIP no está disponible en este equipo. Sube una foto de noticia; el ensayo de laboratorio
-                      queda abajo y no es el veredicto.
+                      {t("cnn.noClip")}
                     </p>
                   )}
                   <details className="cnn-compare">
-                    <summary>Comparar con el ensayo de laboratorio</summary>
+                    <summary>{t("cnn.compare")}</summary>
                     {academic ? (
                       <>
                         <p>
@@ -336,25 +321,20 @@ export default function CnnLab() {
                           ) : null}
                         </p>
                         <p className="muted">
-                          {academic.note ||
-                            "Ensayo de laboratorio. No lo uses para decidir si la nota es verdad."}
+                          {academic.note || t("cnn.academicNote")}
                         </p>
                         <SoftmaxBars scores={academic.scores} />
                       </>
                     ) : (
-                      <p className="muted">Sin comparación académica para esta imagen.</p>
+                      <p className="muted">{t("cnn.noAcademic")}</p>
                     )}
                   </details>
                   <LeerMas maxLines={3} className="ocr-box">
-                    {`${prodEncoder || pred.encoder || "encoder"} · pHash ${pred.phash_short || "—"} · OCR: ${pred.ocr_text?.trim() || "sin texto"}${
-                      pred.animal_health_relevance != null
-                        ? ` · relevancia sanidad ${(Number(pred.animal_health_relevance) * 100).toFixed(0)}%`
-                        : ""
-                    }`}
+                    {`${prodEncoder || pred.encoder || "encoder"} · pHash ${pred.phash_short || "—"} · OCR: ${pred.ocr_text?.trim() || t("article.noOcr")}`}
                   </LeerMas>
                 </>
               ) : (
-                <p className="muted">Clasificando…</p>
+                <p className="muted">{t("cnn.classifying")}</p>
               )}
             </div>
           </div>

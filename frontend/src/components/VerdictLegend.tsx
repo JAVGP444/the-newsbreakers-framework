@@ -1,33 +1,14 @@
 import { useCallback, useState } from "react";
+import { useLocale } from "../locale";
 
 const STORAGE_KEY = "tnb.verdictLegendOpen";
 
-const STATES = [
-  {
-    label: "Respaldado",
-    tone: "ok",
-    text: "Hay evidencia oficial o científica alineada con la afirmación.",
-  },
-  {
-    label: "Insuficiente",
-    tone: "mid",
-    text: "No hay evidencia bastante para concluir.",
-  },
-  {
-    label: "Posiblemente engañoso",
-    tone: "warn",
-    text: "Hay inconsistencias relevantes en la evidencia.",
-  },
-  {
-    label: "Contradicho",
-    tone: "bad",
-    text: "La evidencia oficial contradice la afirmación.",
-  },
-  {
-    label: "Revisión humana",
-    tone: "human",
-    text: "Baja confianza: un analista debe validar.",
-  },
+const STATE_KEYS = [
+  { id: "ok", label: "verdict.respaldado", why: "verdict.respaldadoWhy", tone: "ok" },
+  { id: "mid", label: "verdict.insuficiente", why: "verdict.insuficienteWhy", tone: "mid" },
+  { id: "warn", label: "verdict.enganoso", why: "verdict.enganosoWhy", tone: "warn" },
+  { id: "bad", label: "verdict.contradicho", why: "verdict.contradichoWhy", tone: "bad" },
+  { id: "human", label: "verdict.humana", why: "verdict.humanaWhy", tone: "human" },
 ] as const;
 
 function readOpen(): boolean {
@@ -39,6 +20,7 @@ function readOpen(): boolean {
 }
 
 export default function VerdictLegend() {
+  const { t } = useLocale();
   const [open, setOpen] = useState(readOpen);
 
   const toggle = useCallback(() => {
@@ -56,9 +38,9 @@ export default function VerdictLegend() {
   return (
     <div className={`verdict-legend${open ? " open" : ""}`}>
       <div className="verdict-legend-bar">
-        {STATES.map((s) => (
-          <span key={s.label} className={`legend-chip ${s.tone}`} title={s.text}>
-            {s.label}
+        {STATE_KEYS.map((s) => (
+          <span key={s.id} className={`legend-chip ${s.tone}`} title={t(s.why)}>
+            {t(s.label)}
           </span>
         ))}
         <button
@@ -68,15 +50,15 @@ export default function VerdictLegend() {
           aria-controls="verdict-legend-list"
           onClick={toggle}
         >
-          {open ? "Ocultar" : "Qué es cada uno"}
+          {open ? t("legend.hide") : t("legend.show")}
         </button>
       </div>
       {open ? (
         <ul id="verdict-legend-list" className="verdict-legend-list">
-          {STATES.map((s) => (
-            <li key={s.label} className="verdict-legend-item">
-              <span className={`pill ${s.tone}`}>{s.label}</span>
-              <span>{s.text}</span>
+          {STATE_KEYS.map((s) => (
+            <li key={s.id} className="verdict-legend-item">
+              <span className={`pill ${s.tone}`}>{t(s.label)}</span>
+              <span>{t(s.why)}</span>
             </li>
           ))}
         </ul>

@@ -1,14 +1,7 @@
 import { useMemo, useState } from "react";
 import type { GraphEdge, GraphNode } from "../api";
+import { useLocale } from "../locale";
 import NetworkGraph from "./NetworkGraph";
-
-const KIND: Record<string, string> = {
-  source: "Fuente",
-  disease: "Enfermedad",
-  narrative: "Relato",
-  article: "Nota",
-  similar: "Nota cercana",
-};
 
 function prune(nodes: GraphNode[], edges: GraphEdge[], limit = 42) {
   if (nodes.length <= limit) return { nodes, edges };
@@ -17,17 +10,21 @@ function prune(nodes: GraphNode[], edges: GraphEdge[], limit = 42) {
   return { nodes: keep, edges: edges.filter((e) => ids.has(e.from) && ids.has(e.to)) };
 }
 
-function relationOf(edge: GraphEdge, byId: Map<string, GraphNode>): string {
+function relationOf(
+  edge: GraphEdge,
+  byId: Map<string, GraphNode>,
+  t: (k: string, vars?: Record<string, string | number>) => string
+): string {
   if (edge.label) return edge.label;
   const a = byId.get(edge.from)?.group;
   const b = byId.get(edge.to)?.group;
   const g = new Set([a, b]);
-  if (g.has("source") && g.has("disease")) return "habla de";
-  if (g.has("article") && g.has("source")) return "publicó";
-  if (g.has("article") && g.has("disease")) return "menciona";
-  if (g.has("disease") && g.has("narrative")) return "entra en";
-  if (g.has("source") && g.has("narrative")) return "alimenta";
-  return "relaciona";
+  if (g.has("source") && g.has("disease")) return t("graph.rel.talks");
+  if (g.has("article") && g.has("source")) return t("graph.rel.published");
+  if (g.has("article") && g.has("disease")) return t("graph.rel.mentions");
+  if (g.has("disease") && g.has("narrative")) return t("graph.rel.enters");
+  if (g.has("source") && g.has("narrative")) return t("graph.rel.feeds");
+  return t("graph.rel.relates");
 }
 
 export default function GraphBoard({
@@ -43,6 +40,12 @@ export default function GraphBoard({
   universe?: number;
   onNode: (node: GraphNode) => void;
 }) {
+  const { t } = useLocale();
+  const kindOf = (group?: string) => {
+    if (!group) return "";
+    const hit = t(`graph.kind.${group}`);
+    return hit.startsWith("graph.kind.") ? group : hit;
+  };
   const [picked, setPicked] = useState<GraphNode | null>(null);
   const [q, setQ] = useState("");
   const view = useMemo(() => prune(nodes, edges), [nodes, edges]);
@@ -58,7 +61,7 @@ export default function GraphBoard({
           key: `${e.from}::${e.to}`,
           from,
           to,
-          relation: relationOf(e, byId),
+          relation: relationOf(e, byId, t),
         };
       })
       .filter((r) => r.from && r.to)
@@ -69,13 +72,13 @@ export default function GraphBoard({
         return blob.includes(needle);
       })
       .sort((a, b) => (b.from!.value || 0) + (b.to!.value || 0) - ((a.from!.value || 0) + (a.to!.value || 0)));
-  }, [view.edges, byId, picked, q]);
+  }, [view.edges, byId, picked, q, t]);
 
   if (!view.nodes.length) {
     return (
       <section className="viz">
-        <h3>Sin red en este recorte</h3>
-        <p className="muted">Cuando haya notas con fuente y enfermedad, aparecen aquí como puntos unidos.</p>
+        <h3>{t("graph.emptyTitle")}</h3>
+        <p className="muted">{t("graph.empty")}</p>
       </section>
     );
   }
@@ -88,23 +91,22 @@ export default function GraphBoard({
   return (
     <section className="graph-board">
       <p className="graph-howto">
-        Cada punto es una fuente, una enfermedad o un relato. Cuanto más grande, más notas lo mencionan. La tabla de
-        al lado lista las mismas uniones: pulsa una fila para saltar de un nodo al otro.
+        {t("graph.howto")}
       </p>
       <p className="graph-legend">
         <span>
-          <i className="swatch source" /> Fuente
+          <i className="swatch source" /> {t("graph.kind.source")}
         </span>
         <span>
-          <i className="swatch disease" /> Enfermedad
+          <i className="swatch disease" /> {t("graph.kind.disease")}
         </span>
         <span>
-          <i className="swatch narrative" /> Relato
+          <i className="swatch narrative" /> {t("graph.kind.narrative")}
         </span>
         {sample != null ? (
           <span className="muted">
-            {sample} de {universe ?? "?"} notas
-            {nodes.length > view.nodes.length ? ` · ${view.nodes.length} puntos más citados` : ""}
+            {t("graph.sample", { sample, universe: universe ?? "?" })}
+            {nodes.length > view.nodes.length ? t("graph.cited", { n: view.nodes.length }) : ""}
           </span>
         ) : null}
       </p>
@@ -119,20 +121,20 @@ export default function GraphBoard({
         />
         <aside className="graph-rels" aria-label="Relaciones del grafo">
           <div className="graph-rels-head">
-            <h4>Relaciones</h4>
+            <h4>{t("graph.rels")}</h4>
             <p className="muted">
-              {picked ? `${rows.length} de este punto` : `${rows.length} uniones`}
+              {picked ? t("graph.ofNode", { n: rows.length }) : t("graph.unions", { n: rows.length })}
             </p>
             <input
               type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar nodo o relación"
-              aria-label="Buscar en la tabla de relaciones"
+              placeholder={t("graph.search")}
+              aria-label={t("graph.searchAria")}
             />
             {picked ? (
               <button type="button" className="ghost" onClick={() => setPicked(null)}>
-                Ver todas
+                {t("graph.all")}
               </button>
             ) : null}
           </div>
@@ -141,9 +143,9 @@ export default function GraphBoard({
               <table>
                 <thead>
                   <tr>
-                    <th>De</th>
-                    <th>Relación</th>
-                    <th>A</th>
+                    <th>{t("graph.col.from")}</th>
+                    <th>{t("graph.col.rel")}</th>
+                    <th>{t("graph.col.to")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -155,19 +157,19 @@ export default function GraphBoard({
                     >
                       <td>
                         <strong>{r.from!.label}</strong>
-                        <em>{KIND[r.from!.group] || r.from!.group}</em>
+                        <em>{kindOf(r.from!.group)}</em>
                       </td>
                       <td className="rel">{r.relation}</td>
                       <td>
                         <strong>{r.to!.label}</strong>
-                        <em>{KIND[r.to!.group] || r.to!.group}</em>
+                        <em>{kindOf(r.to!.group)}</em>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             ) : (
-              <p className="muted">Ninguna unión coincide.</p>
+              <p className="muted">{t("graph.none")}</p>
             )}
           </div>
         </aside>
@@ -178,16 +180,16 @@ export default function GraphBoard({
             <strong>{picked.label}</strong>
             <em>
               {" "}
-              · {KIND[picked.group] || picked.group}
-              {picked.value ? ` · ${picked.value} notas` : ""}
+              · {kindOf(picked.group)}
+              {picked.value ? ` · ${t("graph.notesOf", { n: picked.value })}` : ""}
             </em>
           </span>
           <button type="button" className="run" onClick={() => onNode(picked)}>
-            Ver en la sala
+            {t("graph.openSala")}
           </button>
         </p>
       ) : (
-        <p className="muted">Pulsa un punto o una fila. Luego “Ver en la sala”.</p>
+        <p className="muted">{t("graph.pickHint")}</p>
       )}
     </section>
   );

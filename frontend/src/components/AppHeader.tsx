@@ -1,18 +1,18 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { api } from "../api";
-import { TranslateToggle } from "../translate";
+import { LanguageToggle, useLocale } from "../locale";
 import BrandMark from "./BrandMark";
 import VerdictLegend from "./VerdictLegend";
 
 const NAV = [
-  { to: "/", label: "Sala", end: true },
-  { to: "/revision", label: "Revisión" },
-  { to: "/mapa", label: "Mapa" },
-  { to: "/graficas", label: "Gráficas" },
-  { to: "/grafo", label: "Grafo" },
-  { to: "/cnn", label: "CNN" },
-  { to: "/fuentes", label: "Fuentes" },
+  { to: "/", key: "nav.sala", end: true },
+  { to: "/revision", key: "nav.revision" },
+  { to: "/mapa", key: "nav.mapa" },
+  { to: "/graficas", key: "nav.graficas" },
+  { to: "/grafo", key: "nav.grafo" },
+  { to: "/cnn", key: "nav.cnn" },
+  { to: "/fuentes", key: "nav.fuentes" },
 ];
 
 export default function AppHeader({
@@ -26,6 +26,7 @@ export default function AppHeader({
 }) {
   const location = useLocation();
   const search = location.search;
+  const { t } = useLocale();
   const [pending, setPending] = useState(0);
 
   useEffect(() => {
@@ -37,14 +38,14 @@ export default function AppHeader({
           if (!cancelled) setPending(Number(r.alerts_pending || 0));
         })
         .catch(() => {
-          /* no borrar el recuento anterior */
+          /* keep last count */
         });
     };
     load();
-    const t = window.setInterval(load, 60_000);
+    const timer = window.setInterval(load, 60_000);
     return () => {
       cancelled = true;
-      window.clearInterval(t);
+      window.clearInterval(timer);
     };
   }, [location.pathname]);
 
@@ -60,11 +61,11 @@ export default function AppHeader({
           </div>
         </div>
         <div className="top-actions">
-          <TranslateToggle />
+          <LanguageToggle />
           {actions}
         </div>
       </div>
-      <nav className="site-nav" aria-label="Secciones del observatorio">
+      <nav className="site-nav" aria-label={t("nav.aria")}>
         {NAV.map((item) => (
           <NavLink
             key={item.to}
@@ -75,7 +76,7 @@ export default function AppHeader({
               return isActive || salaOn ? "nav-link on" : "nav-link";
             }}
           >
-            {item.label}
+            {t(item.key)}
             {item.to === "/revision" && pending > 0 ? <span className="nav-badge">{pending}</span> : null}
           </NavLink>
         ))}

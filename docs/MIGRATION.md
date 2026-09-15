@@ -1,5 +1,9 @@
 # Migración: observatorio vigente → framework
 
+> **Español / English.** Nota histórica de migración. El producto vigente es este repo. Instalación: [`README.md`](../README.md).
+>
+> **English.** Historical migration note. The current product is this repo. Install: [`README.md`](../README.md).
+
 El producto **vigente** es
 `C:\Users\javie\OneDrive\Escritorio\Generador_Excel_Enfermedades`
 (Excel + dashboards HTML + `newsbreakers/`).

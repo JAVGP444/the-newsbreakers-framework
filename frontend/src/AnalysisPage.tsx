@@ -20,7 +20,6 @@ import MapView from "./components/MapView";
 import { HitlButtons } from "./Observatory";
 import SafeImg from "./components/SafeImg";
 import {
-  KIND_LABEL,
   articleLede,
   displayClaim,
   displaySourceName,
@@ -29,6 +28,7 @@ import {
   formatDate,
   formatPublishedAt,
   isRealNewsThumb,
+  kindLabel,
   riskHeadline,
   riskTone,
   sourceKind,
@@ -39,6 +39,7 @@ import {
 } from "./display";
 import { hydratePoint } from "./geoCentroids";
 import { isSafeExternalHttp, articleHref } from "./safeUrl";
+import { useLocale } from "./locale";
 import { useTranslated } from "./translate";
 
 const OFFICIAL_HOST_LABEL: Record<string, string> = {
@@ -70,20 +71,20 @@ function officialLabel(url?: string | null): string {
   return host;
 }
 
-function claimWhyShort(claim: Claim): string {
+function claimWhyShort(claim: Claim, lang: "es" | "en", t: (k: string, v?: Record<string, string | number>) => string): string {
   const expl = claim.nli_explain;
-  const stance = stanceLabel(expl?.label || claim.nli_label);
+  const stance = stanceLabel(expl?.label || claim.nli_label, lang);
   const official = (expl?.items || []).find((item) => item.official) || expl?.items?.[0];
   if (!official) {
-    return stance === "Sin verificar" ? "No hay ficha oficial contra la que cruzar esta frase." : "";
+    return stance === t("verdict.sin") ? t("analysis.whyNone") : "";
   }
   const name = officialLabel(official.url);
   const miss = (official.missing || [])[0];
-  if (stance === "Respaldado") return `Coincide con la ficha de ${name}.`;
-  if (stance === "Contradicho") {
-    return miss ? `Choca con ${name}: ${miss}` : `Choca con la ficha de ${name}.`;
+  if (stance === t("verdict.respaldado")) return t("analysis.whyMatch", { name });
+  if (stance === t("verdict.contradicho")) {
+    return miss ? t("analysis.whyClashMiss", { name, miss }) : t("analysis.whyClash", { name });
   }
-  return miss ? `${name}: ${miss}` : `No alcanza para respaldar con ${name}.`;
+  return miss ? t("analysis.whyShort", { name, miss }) : t("analysis.whyWeak", { name });
 }
 
 function isTemplateLectura(text?: string | null): boolean {
@@ -93,6 +94,7 @@ function isTemplateLectura(text?: string | null): boolean {
 }
 
 function RiskBrief({ why, score }: { why?: import("./api").Article["risk_why"]; score?: number | null }) {
+  const { t } = useLocale();
   const rows = why?.explain?.rows || [];
   const line = riskHeadline(why, score);
   if (!line && !rows.length) return null;
@@ -101,12 +103,12 @@ function RiskBrief({ why, score }: { why?: import("./api").Article["risk_why"]; 
       {line ? <p className="ficha-lead">{line}</p> : null}
       {why?.numeric?.reason && why.numeric.claim != null && why.numeric.official != null ? (
         <p className="muted">
-          Cifra en la nota: {why.numeric.claim}. Parte oficial: {why.numeric.official}.
+          {t("analysis.figure", { claim: why.numeric.claim, official: why.numeric.official })}
         </p>
       ) : null}
       {rows.length ? (
         <details className="calc-fold">
-          <summary>Cómo se calculó el riesgo</summary>
+          <summary>{t("article.riskHow")}</summary>
           <ul className="risk-parts">
             {rows.map((row) => (
               <li key={row.id}>
@@ -130,8 +132,9 @@ function RiskBrief({ why, score }: { why?: import("./api").Article["risk_why"]; 
 }
 
 function ClaimDetail({ claim, title }: { claim: Claim; title?: string }) {
+  const { t, lang } = useLocale();
   const expl = claim.nli_explain;
-  const why = claimWhyShort(claim);
+  const why = claimWhyShort(claim, lang, t);
   const items = expl?.items || [];
   return (
     <div className="claim-expanded">
@@ -139,12 +142,12 @@ function ClaimDetail({ claim, title }: { claim: Claim; title?: string }) {
       {why ? <p className="ficha-lead">{why}</p> : null}
       {items.length ? (
         <details className="calc-fold">
-          <summary>Cruce con fichas oficiales</summary>
+          <summary>{t("analysis.nli")}</summary>
           <ul className="nli-plain">
             {items.map((item, i) => (
               <li key={item.url || String(i)}>
                 <strong>{officialLabel(item.url)}</strong>
-                {item.missing?.length ? `: ${item.missing[0]}` : item.official ? " · ficha oficial" : ""}
+                {item.missing?.length ? `: ${item.missing[0]}` : item.official ? t("analysis.officialCard") : ""}
               </li>
             ))}
           </ul>
@@ -155,11 +158,12 @@ function ClaimDetail({ claim, title }: { claim: Claim; title?: string }) {
 }
 
 function ContrastNarrative({ narrative }: { narrative: NarrativeAnalysis }) {
+  const { t } = useLocale();
   const card = narrative.contrast;
   const cls = narrative.classification || card?.conclusion;
   return (
     <section className="viz contrast-block">
-      <h3>Contraste de la narrativa</h3>
+      <h3>{t("analysis.contrast")}</h3>
       <p className="muted">{narrative.principle}</p>
       {cls ? (
         <p className="ficha-lead">
@@ -169,33 +173,33 @@ function ContrastNarrative({ narrative }: { narrative: NarrativeAnalysis }) {
       {card ? (
         <dl className="case-facts contrast-facts">
           <div>
-            <dt>Afirmación</dt>
+            <dt>{t("analysis.claim")}</dt>
             <dd>{card.afirmacion}</dd>
           </div>
           <div>
-            <dt>Evidencia de la nota</dt>
+            <dt>{t("analysis.noteEv")}</dt>
             <dd>{card.evidencia_afirmacion}</dd>
           </div>
           <div>
-            <dt>Información oficial</dt>
+            <dt>{t("analysis.official")}</dt>
             <dd>
               {card.informacion_oficial?.length
                 ? card.informacion_oficial.map((o) => o.host || o.title).join(" · ")
-                : "Sin ficha oficial en este cruce."}
+                : t("analysis.noOfficial")}
             </dd>
           </div>
           {card.normativa ? (
             <div>
-              <dt>Normativa</dt>
+              <dt>{t("analysis.norm")}</dt>
               <dd>{card.normativa}</dd>
             </div>
           ) : null}
           <div>
-            <dt>No comprobado</dt>
+            <dt>{t("analysis.unproven")}</dt>
             <dd>
               {card.no_comprobado?.length
                 ? card.no_comprobado.map((c) => c.text).filter(Boolean).join(" · ")
-                : "Nada marcado."}
+                : t("analysis.nothing")}
             </dd>
           </div>
         </dl>
@@ -212,11 +216,11 @@ function ContrastNarrative({ narrative }: { narrative: NarrativeAnalysis }) {
           ))}
         </LeerMas>
       ) : (
-        <p className="muted">Sin señales del banco en esta nota.</p>
+        <p className="muted">{t("analysis.noSignals")}</p>
       )}
       {narrative.claims?.length > 1 ? (
         <div>
-          <h4>Afirmaciones partidas</h4>
+          <h4>{t("analysis.split")}</h4>
           <ol className="split-claims">
             {narrative.claims.slice(0, 6).map((c, i) => (
               <li key={i}>{c.text}</li>
@@ -248,6 +252,7 @@ function uniqueOfficialSources(rows: EvidenceRow[], limit = 4): EvidenceRow[] {
 
 export default function AnalysisPage() {
   const { id = "" } = useParams();
+  const { t, lang } = useLocale();
   const [data, setData] = useState<any>(null);
   const [err, setErr] = useState("");
   const [recent, setRecent] = useState<ArticleCard[]>([]);
@@ -290,7 +295,7 @@ export default function AnalysisPage() {
           }
         }
         if (!cancelled) {
-          setErr("No se encontró el artículo");
+          setErr(t("article.notFound"));
           setRecent(extra.slice(0, 5));
         }
       }
@@ -327,7 +332,7 @@ export default function AnalysisPage() {
   });
   const kind = article ? sourceKind(article) : "prensa";
   const sourceName = article ? displaySourceName(article, source?.name) : "Fuente";
-  const when = formatPublishedAt(article?.published_at);
+  const when = formatPublishedAt(article?.published_at, lang);
   const hideMap = !geo || geo.country === "XX" || geo.country === "INT" || geo.lat == null;
 
   const officialSources = useMemo(() => uniqueOfficialSources(evidence), [evidence]);
@@ -347,11 +352,11 @@ export default function AnalysisPage() {
     try {
       const body = await api.reviewArticle(article.content_id, label, modReason);
       const next = body.article?.verdict || "";
-      setHitlNote(next ? `Revisión guardada (${label}). Veredicto: ${next}` : `Revisión guardada: ${label}`);
+      setHitlNote(next ? `Revisión guardada (${label}). Veredicto: ${next}` : t("nar.saved", { label }));
       setModOpen(false);
       await reload();
     } catch (e) {
-      setHitlNote(e instanceof Error ? e.message : "No se pudo guardar la revisión.");
+      setHitlNote(e instanceof Error ? e.message : t("common.saveFail"));
     } finally {
       setHitlBusy(false);
     }
@@ -360,13 +365,13 @@ export default function AnalysisPage() {
   return (
     <div className="shell analysis">
       <AppHeader
-        title={tTitle || article?.title || (err ? "Artículo no encontrado" : "Cargando ficha…")}
+        title={tTitle || article?.title || (err ? t("article.missing") : t("article.loading"))}
         subtitle={article ? `${sourceName} · ${when}` : undefined}
       />
       {err && (
         <section className="viz">
           <p className="banner err">{err}</p>
-          <p className="muted">No se encontró este artículo. Estos son algunos recientes:</p>
+          <p className="muted">{t("article.missingList")}</p>
           <LeerMas maxItems={3} as="ul" className="similar-list">
             {recent.map((a) => (
               <li key={a.content_id}>
@@ -376,7 +381,7 @@ export default function AnalysisPage() {
           </LeerMas>
         </section>
       )}
-      {!article && !err && <p className="muted">Cargando ficha…</p>}
+      {!article && !err && <p className="muted">{t("article.loading")}</p>}
       {article && (
         <div className="analysis-body" key={article.content_id}>
           <div className="analysis-col context">
@@ -387,19 +392,19 @@ export default function AnalysisPage() {
                 </div>
               ) : null}
               <p className="meta">
-                {sourceName} · {when} · {geo?.name || article.country || "Sin país"}
+                {sourceName} · {when} · {geo?.name || article.country || t("common.noCountry")}
               </p>
               {tSummary ? (
                 <LeerMas maxLines={5} className="lede">
                   {tSummary}
                 </LeerMas>
               ) : (
-                <p className="lede-empty">Esta nota no trajo cuerpo. Abre el original.</p>
+                <p className="lede-empty">{t("article.noBody")}</p>
               )}
               {isSafeExternalHttp(article.url) ? (
                 <p>
                   <a className="ext" href={article.url} target="_blank" rel="noopener noreferrer">
-                    Abrir noticia original
+                    {t("article.openOriginal")}
                   </a>
                 </p>
               ) : null}
@@ -407,12 +412,12 @@ export default function AnalysisPage() {
 
             {entityKinds.length || tLectura ? (
               <section className="viz">
-                <h3>El caso</h3>
+                <h3>{t("article.case")}</h3>
                 {entityKinds.length ? (
                   <dl className="case-facts">
                     {entityKinds.map((kindKey) => (
                       <div key={kindKey}>
-                        <dt>{entityKindLabel(kindKey)}</dt>
+                        <dt>{entityKindLabel(kindKey, lang)}</dt>
                         <dd>{(grouped[kindKey] || []).slice(0, 4).join(", ")}</dd>
                       </div>
                     ))}
@@ -428,19 +433,19 @@ export default function AnalysisPage() {
 
             {!hideMap ? (
               <section className="viz">
-                <h3>Ubicación</h3>
+                <h3>{t("article.place")}</h3>
                 <MapView points={[geo]} height={240} focus={{ lat: geo.lat!, lng: geo.lng!, label: geo.name }} />
               </section>
             ) : null}
 
             {timeline.length ? (
               <section className="viz compact">
-                <h3>Línea de tiempo</h3>
+                <h3>{t("article.timeline")}</h3>
                 <ol className="timeline compact">
                   {timeline.map((t: { kind?: string; label?: string; at?: string; text?: string }, i: number) => (
                     <li key={i} className={t.kind}>
                       <span>{t.label}</span>
-                      <strong>{formatDate(t.at)}</strong>
+                      <strong>{formatDate(t.at, lang)}</strong>
                       {t.text && flowText(t.text) !== flowText(article.title) ? <p>{flowText(t.text)}</p> : null}
                     </li>
                   ))}
@@ -452,25 +457,25 @@ export default function AnalysisPage() {
           <div className="analysis-col decision">
             <section className="viz">
               <div className="art-pills wrap">
-                <span className={`type-chip kind-${kind}`}>{KIND_LABEL[kind]}</span>
-                <span className={`pill ${verdictClass(article.verdict)}`}>{verdictLabel(article.verdict)}</span>
+                <span className={`type-chip kind-${kind}`}>{kindLabel(kind, lang)}</span>
+                <span className={`pill ${verdictClass(article.verdict)}`}>{verdictLabel(article.verdict, lang)}</span>
                 {data.narrative?.classification ? (
                   <span className={`pill nar-${data.narrative.classification.code}`}>
                     {data.narrative.classification.label}
                   </span>
                 ) : null}
                 <span className={`pill risk-pill ${riskTone(article.risk_score)}`}>
-                  {article.risk_score == null ? "Riesgo —" : `Riesgo ${article.risk_score}/100`}
+                  {article.risk_score == null ? t("risk.dash") : t("risk.of", { n: article.risk_score })}
                 </span>
               </div>
               <RiskBrief why={article.risk_why} score={article.risk_score} />
               <div className="hitl-ficha">
-                <p className="muted">{alerts.length ? "Alerta pendiente de revisión humana" : "Revisión humana"}</p>
+                <p className="muted">{alerts.length ? t("article.alertPending") : t("article.human")}</p>
                 {hitlNote ? <p className="banner">{hitlNote}</p> : null}
                 <HitlButtons busy={hitlBusy} onAct={review} />
                 {modOpen ? (
                   <label className="hitl-reason">
-                    Motivo (obligatorio)
+                    {t("article.reason")}
                     <textarea value={modReason} onChange={(e) => setModReason(e.target.value)} rows={3} />
                     <button
                       type="button"
@@ -478,7 +483,7 @@ export default function AnalysisPage() {
                       disabled={!modReason.trim() || hitlBusy}
                       onClick={() => review("modificado")}
                     >
-                      Guardar modificación
+                      {t("article.saveMod")}
                     </button>
                   </label>
                 ) : null}
@@ -486,7 +491,7 @@ export default function AnalysisPage() {
             </section>
 
             <section className={`viz claims-block${!claims.length && !officialSources.length ? " is-empty" : ""}`}>
-              <h3>Afirmaciones</h3>
+              <h3>{t("article.claims")}</h3>
               {claims.length ? (
                 <LeerMas maxItems={3} as="ul" className="claim-list">
                   {claims.map((claim) => {
@@ -499,7 +504,7 @@ export default function AnalysisPage() {
                           aria-expanded={open}
                           onClick={() => setOpenClaimId(open ? null : claim.claim_id)}
                         >
-                          <span className={`pill ${verdictClass(claim.nli_label)}`}>{stanceLabel(claim.nli_label)}</span>
+                          <span className={`pill ${verdictClass(claim.nli_label)}`}>{stanceLabel(claim.nli_label, lang)}</span>
                           <span className="claim-compact-text">{displayClaim(claim.text, article.title)}</span>
                         </button>
                         {open ? <ClaimDetail claim={claim} title={article.title} /> : null}
@@ -508,10 +513,10 @@ export default function AnalysisPage() {
                   })}
                 </LeerMas>
               ) : (
-                <p className="muted">No hay frases claras que cruzar con las fichas.</p>
+                <p className="muted">{t("article.noClaims")}</p>
               )}
               <div className={`fuentes-oficiales${officialSources.length ? "" : " is-empty"}`}>
-                <h4>Fuentes oficiales</h4>
+                <h4>{t("article.official")}</h4>
                 {officialSources.length ? (
                   <ul className="fuente-chips">
                     {officialSources.map((e) => (
@@ -527,7 +532,7 @@ export default function AnalysisPage() {
                     ))}
                   </ul>
                 ) : (
-                  <p className="muted">Sin evidencia oficial disponible</p>
+                  <p className="muted">{t("article.noOfficial")}</p>
                 )}
               </div>
             </section>
@@ -536,7 +541,7 @@ export default function AnalysisPage() {
 
           {similar.length ? (
             <section className="viz compact analysis-similar">
-              <h3>Artículos similares</h3>
+              <h3>{t("article.similar")}</h3>
               <LeerMas maxItems={4} as="ul" className="similar-list">
                 {similar.map((s: { content_id: string; title: string; score?: number; reasons?: string[] }) => (
                   <li key={s.content_id}>
@@ -550,11 +555,11 @@ export default function AnalysisPage() {
 
           {galleryPhotos.length ? (
             <section className="viz compact analysis-images">
-              <h3>Imágenes</h3>
+              <h3>{t("article.images")}</h3>
               <div className="img-gallery">
                 {galleryPhotos.map((im) => (
                   <div key={im.image_id} className="gallery-item">
-                    <SafeImg src={imageSrc(im)} alt={im.cnn_class || "imagen del caso"} />
+                    <SafeImg src={imageSrc(im)} alt={im.cnn_class || t("image.alt")} />
                     <div>
                       {im.cnn_confidence != null || im.cnn_class ? (
                         <p className="clip-line">
@@ -563,7 +568,7 @@ export default function AnalysisPage() {
                         </p>
                       ) : null}
                       <details>
-                        <summary>Tipo de imagen</summary>
+                        <summary>{t("article.imageType")}</summary>
                         {cnnConfidenceWhy(im) ? <p className="muted cnn-why">{cnnConfidenceWhy(im)}</p> : null}
                         <strong className="cnn-class">{im.cnn_class || "SIN_CLASE"}</strong>
                         <SoftmaxBars scores={im.cnn_scores} />
@@ -573,7 +578,7 @@ export default function AnalysisPage() {
                           {flowText(im.ocr_text)}
                         </LeerMas>
                       ) : (
-                        <div className="ocr-box ocr-empty">Sin texto en la imagen</div>
+                        <div className="ocr-box ocr-empty">{t("article.noOcr")}</div>
                       )}
                     </div>
                   </div>

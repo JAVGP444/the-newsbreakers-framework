@@ -131,18 +131,18 @@ export function filtersToApiQuery(filters: ObservatoryFilters): string {
   return p.toString();
 }
 
-export function chipLabel(key: string, value: string): string {
+export function chipLabel(key: string, value: string, t?: (k: string) => string): string {
   const names: Record<string, string> = {
-    disease: "Enfermedad",
-    from: "Desde",
-    to: "Hasta",
-    country: "País",
-    verdict: "Veredicto",
-    source: "Fuente",
-    q: "Texto",
-    origin: "Origen",
-    stance: "Postura",
-    raw_format: "Formato",
+    disease: t ? t("chip.disease") : "Enfermedad",
+    from: t ? t("chip.from") : "Desde",
+    to: t ? t("chip.to") : "Hasta",
+    country: t ? t("chip.country") : "País",
+    verdict: t ? t("chip.verdict") : "Veredicto",
+    source: t ? t("chip.source") : "Fuente",
+    q: t ? t("chip.q") : "Texto",
+    origin: t ? t("chip.origin") : "Origen",
+    stance: t ? t("chip.stance") : "Postura",
+    raw_format: t ? t("chip.format") : "Formato",
   };
   return `${names[key] || key}: ${value}`;
 }

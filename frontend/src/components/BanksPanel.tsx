@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, type KeywordTerm } from "../api";
+import { useLocale } from "../locale";
 
 export default function BanksPanel() {
+  const { t } = useLocale();
   const [terms, setTerms] = useState<KeywordTerm[]>([]);
   const [principle, setPrinciple] = useState("");
   const [err, setErr] = useState("");
@@ -17,7 +19,7 @@ export default function BanksPanel() {
         setPrinciple(r.principle || "");
         setErr("");
       })
-      .catch(() => setErr("No se pudo cargar el banco."));
+      .catch(() => setErr(t("banks.fail")));
 
   useEffect(() => {
     load();
@@ -40,16 +42,16 @@ export default function BanksPanel() {
 
   return (
     <section className="viz">
-      <h3>Banco de términos</h3>
-      <p className="ficha-lead">{principle || "peso ≠ malicia. El término es una señal, no un veredicto."}</p>
+      <h3>{t("banks.title")}</h3>
+      <p className="ficha-lead">{principle || t("banks.lead")}</p>
       {err ? <p className="banner err">{err}</p> : null}
       <form className="filter-row" onSubmit={add}>
         <label>
-          Término
+          {t("banks.term")}
           <input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="ocultar" />
         </label>
         <label>
-          Categoría
+          {t("banks.category")}
           <select value={category} onChange={(e) => setCategory(e.target.value)}>
             {cats.length ? cats.map((c) => (
               <option key={c} value={c}>
@@ -59,21 +61,21 @@ export default function BanksPanel() {
           </select>
         </label>
         <label>
-          Peso (1–5)
+          {t("banks.weight")}
           <input type="number" min={1} max={5} value={weight} onChange={(e) => setWeight(Number(e.target.value))} />
         </label>
         <button type="submit" className="run">
-          Agregar
+          {t("banks.add")}
         </button>
       </form>
       <div className="source-table-wrap">
         <table className="source-table">
           <thead>
             <tr>
-              <th>Término</th>
-              <th>Categoría</th>
-              <th>Peso</th>
-              <th>Activo</th>
+              <th>{t("banks.term")}</th>
+              <th>{t("banks.category")}</th>
+              <th>{t("nar.col.force")}</th>
+              <th>{t("banks.active")}</th>
             </tr>
           </thead>
           <tbody>
@@ -84,7 +86,7 @@ export default function BanksPanel() {
                 <td>{row.weight}</td>
                 <td>
                   <button type="button" className="chip" onClick={() => toggle(row)}>
-                    {row.active ? "Sí" : "No"}
+                    {row.active ? t("banks.on") : t("banks.off")}
                   </button>
                 </td>
               </tr>

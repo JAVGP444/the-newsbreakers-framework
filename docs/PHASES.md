@@ -1,5 +1,9 @@
 # Fases 0–20 — hoja de ruta
 
+> **Español / English.** Hoja de ruta histórica. El estado actual del producto está en [`README.md`](../README.md).
+>
+> **English.** Historical roadmap. Current product status is in [`README.md`](../README.md).
+
 **Fase 0** = observatorio vigente en
 `C:\Users\javie\OneDrive\Escritorio\Generador_Excel_Enfermedades`.
 **Fases 1–8, 12–14, 16–17** = MVP **ejecutable** en esta carpeta

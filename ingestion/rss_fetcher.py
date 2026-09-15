@@ -84,7 +84,7 @@ def _image_urls(item: ET.Element) -> tuple[list[str], list[str]]:
 
 
 def _rss_item_limit(explicit: int | None = None) -> int:
-    from config.caps import COMMUNITY_CAPS, apply_cap
+    from config.license import COMMUNITY_CAPS, apply_cap
 
     if explicit is not None:
         raw = max(1, int(explicit))
@@ -97,7 +97,7 @@ def _rss_item_limit(explicit: int | None = None) -> int:
 
 
 def _rss_max_pages() -> int:
-    from config.caps import COMMUNITY_CAPS, apply_cap
+    from config.license import COMMUNITY_CAPS, apply_cap
 
     try:
         raw = max(1, min(8, int(os.environ.get("TNB_RSS_PAGES", "3"))))

@@ -8,6 +8,7 @@ import {
   sourceKind,
   verdictLabel,
 } from "../display";
+import { useLocale } from "../locale";
 import { articleHref, isSafeExternalHttp } from "../safeUrl";
 import CardThumb from "./CardThumb";
 
@@ -22,9 +23,10 @@ export default function ArticleCard({
   title?: string;
   summary?: string;
 }) {
+  const { t, lang } = useLocale();
   const kind = sourceKind(article);
   const summary = summaryOverride ?? cardExcerpt(article.text, article.title);
-  const when = formatPublishedAt(article.published_at);
+  const when = formatPublishedAt(article.published_at, lang);
   const risk = article.risk_score;
   const name = displaySourceName(article, sourceName);
   const href = articleHref(article.content_id);
@@ -37,9 +39,9 @@ export default function ArticleCard({
       </Link>
       <div className="art-body">
         <div className="art-pills">
-          <span className={`pill ${verdictClass(article.verdict)}`}>{verdictLabel(article.verdict)}</span>
+          <span className={`pill ${verdictClass(article.verdict)}`}>{verdictLabel(article.verdict, lang)}</span>
           <span className={`pill risk-pill ${riskTone(risk)}`}>
-            {risk == null ? "Riesgo —" : `Riesgo ${risk}`}
+            {risk == null ? t("risk.dash") : t("risk.n", { n: risk })}
           </span>
         </div>
         <h2 className="art-title">
@@ -57,7 +59,7 @@ export default function ArticleCard({
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
             >
-              Original
+              {t("article.original")}
             </a>
           ) : null}
         </p>

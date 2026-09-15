@@ -1,4 +1,5 @@
 import type { Article, ImageRow } from "./api";
+import { lookup, type Lang } from "./i18n";
 
 export type SourceKind = "oficial" | "youtube" | "social" | "cientifico" | "prensa";
 
@@ -35,8 +36,8 @@ export function youtubeThumbUrl(url?: string | null): string | null {
   return match ? `https://img.youtube.com/vi/${match[1]}/hqdefault.jpg` : null;
 }
 
-export function sourceInitials(name?: string | null): string {
-  const clean = (name || "Fuente").replace(/^www\./, "").trim();
+export function sourceInitials(name?: string | null, lang: Lang = "es"): string {
+  const clean = (name || lookup(lang, "common.source")).replace(/^www\./, "").trim();
   const parts = clean.split(/[\s./_-]+/).filter((p) => /[a-z0-9]/i.test(p));
   const a = parts[0]?.[0] || "N";
   const b = parts[1]?.[0] || parts[0]?.[1] || "";
@@ -67,24 +68,43 @@ export const MAP_DISEASE_COLOR: Record<string, { fill: string; stroke: string; l
   fiebre_porcina_clasica: { fill: "#c084fc", stroke: "#e9d5ff", label: "PPC" },
 };
 
-export function mapDiseaseStyle(disease?: string | null) {
-  return MAP_DISEASE_COLOR[disease || ""] || { fill: "#94a3b8", stroke: "#cbd5e1", label: "Varias o sin etiqueta" };
+export function mapDiseaseStyle(disease?: string | null, lang: Lang = "es") {
+  const base = MAP_DISEASE_COLOR[disease || ""];
+  if (!base) return { fill: "#94a3b8", stroke: "#cbd5e1", label: lookup(lang, "disease.mixed") };
+  const key =
+    disease === "gusano_barrenador"
+      ? "disease.gusano"
+      : disease === "gripe_aviar"
+        ? "disease.aviar"
+        : disease === "fiebre_porcina_clasica"
+          ? "disease.ppc"
+          : "";
+  return { ...base, label: key ? lookup(lang, key) : base.label };
 }
 
-export function riskHint(score?: number | null) {
-  if (score == null || Number.isNaN(score)) return "sin score";
+export function diseaseUiLabel(id?: string | null, fallback?: string, lang: Lang = "es"): string {
+  if (id === "gusano_barrenador") return lookup(lang, "disease.gusano");
+  if (id === "gripe_aviar") return lookup(lang, "disease.aviar");
+  if (id === "fiebre_porcina_clasica") return lookup(lang, "disease.ppc");
+  if (id === "otras") return lookup(lang, "filter.other");
+  return fallback || lookup(lang, "disease.mixed");
+}
+
+export function riskHint(score?: number | null, lang: Lang = "es") {
+  if (score == null || Number.isNaN(score)) return lookup(lang, "map.risk.none");
   const n = Math.round(score);
-  if (n >= 70) return `alto ${n}`;
-  if (n >= 40) return `medio ${n}`;
-  return `bajo ${n}`;
+  if (n >= 70) return lookup(lang, "map.risk.high", { n });
+  if (n >= 40) return lookup(lang, "map.risk.mid", { n });
+  return lookup(lang, "map.risk.low", { n });
 }
 
-export function shortChartDate(iso?: string | null): string {
-  if (!iso || iso === "—" || iso === "Sin fecha") return iso || "Sin fecha";
+export function shortChartDate(iso?: string | null, lang: Lang = "es"): string {
+  const none = lookup(lang, "date.none");
+  if (!iso || iso === "—" || iso === "Sin fecha" || iso === "No date") return iso || none;
   const raw = iso.length === 10 ? `${iso}T12:00:00` : iso;
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("es-MX", { day: "numeric", month: "short" });
+  return d.toLocaleDateString(lang === "en" ? "en-US" : "es-MX", { day: "numeric", month: "short" });
 }
 
 export function sourceKind(article: Article): SourceKind {
@@ -147,7 +167,7 @@ export function displaySourceName(article: Article, mapped?: string | null): str
   if (mapped && !mapped.startsWith("SRC-")) return mapped;
   const st = (article.source_type || "").trim();
   if (st && !/^src-/i.test(st)) return st;
-  return mapped || article.source_id || "Fuente";
+  return mapped || article.source_id || lookup("es", "common.source");
 }
 
 export const KIND_LABEL: Record<SourceKind, string> = {
@@ -157,6 +177,10 @@ export const KIND_LABEL: Record<SourceKind, string> = {
   cientifico: "Científico",
   prensa: "Prensa",
 };
+
+export function kindLabel(kind: SourceKind, lang: Lang = "es"): string {
+  return lookup(lang, `origin.${kind}`);
+}
 
 export function twoLineSummary(text?: string | null, title?: string | null): string {
   return cardExcerpt(text, title, 160);
@@ -209,28 +233,30 @@ export function riskHeadline(why?: Article["risk_why"] | null, score?: number | 
   return "";
 }
 
-export function formatDate(iso?: string | null): string {
-  if (!iso) return "Sin fecha";
+export function formatDate(iso?: string | null, lang: Lang = "es"): string {
+  const none = lookup(lang, "date.none");
+  const loc = lang === "en" ? "en-US" : "es-MX";
+  if (!iso) return none;
   const raw = iso.trim().replace(/Z$/i, "");
   const compact = raw.match(/^(\d{4})(\d{2})(\d{2})(?:T\d*)?/);
   if (compact) {
     const d = new Date(`${compact[1]}-${compact[2]}-${compact[3]}T12:00:00`);
     if (!Number.isNaN(d.getTime())) {
-      return d.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
+      return d.toLocaleDateString(loc, { day: "numeric", month: "short", year: "numeric" });
     }
   }
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) {
     const cut = iso.slice(0, 10);
-    return cut.includes("-") ? cut : "Sin fecha";
+    return cut.includes("-") ? cut : none;
   }
-  return d.toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
+  return d.toLocaleDateString(loc, { day: "numeric", month: "short", year: "numeric" });
 }
 
-export function formatPublishedAt(published?: string | null): string {
+export function formatPublishedAt(published?: string | null, lang: Lang = "es"): string {
   const raw = (published || "").trim();
-  if (!raw) return "Sin fecha de publicación";
-  return formatDate(raw);
+  if (!raw) return lookup(lang, "date.noPub");
+  return formatDate(raw, lang);
 }
 
 const PART_LABELS: Record<string, string> = {
@@ -334,56 +360,39 @@ export function claimConfidenceWhy(confidence?: number | null, nli?: string | nu
   return `Confianza ${pct}% en la postura «${stance}»: sale del cruce léxico de la afirmación con fichas oficiales (WOAH, SENASICA, etc.). No es un detector de fake news.`;
 }
 
-export function verdictLabel(v?: string | null): string {
+export function verdictLabel(v?: string | null, lang: Lang = "es"): string {
   const x = (v || "").trim();
-  if (!x) return "Sin veredicto";
+  if (!x) return lookup(lang, "verdict.empty");
   const up = x.toUpperCase();
-  if (up.includes("RESPALD") || up === "SUPPORTED") return "Respaldado";
-  if (up.includes("INSUFIC")) return "Insuficiente";
-  if (up.includes("CONTRAD") || up === "CONTRADICTED") return "Contradicho";
-  if (up.includes("ENGAÑ") || up.includes("ENGAN") || up.includes("MISLEAD")) return "Posiblemente engañoso";
-  if (up.includes("HUMANA") || up.includes("REVISION") || up.includes("REVIEW")) return "Revisión humana";
-  if (up.includes("UNKNOWN") || up === "SIN VERIFICAR") return "Sin verificar";
+  if (up.includes("RESPALD") || up === "SUPPORTED") return lookup(lang, "verdict.respaldado");
+  if (up.includes("INSUFIC")) return lookup(lang, "verdict.insuficiente");
+  if (up.includes("CONTRAD") || up === "CONTRADICTED") return lookup(lang, "verdict.contradicho");
+  if (up.includes("ENGAÑ") || up.includes("ENGAN") || up.includes("MISLEAD")) return lookup(lang, "verdict.enganoso");
+  if (up.includes("HUMANA") || up.includes("REVISION") || up.includes("REVIEW")) return lookup(lang, "verdict.humana");
+  if (up.includes("UNKNOWN") || up === "SIN VERIFICAR" || up.includes("UNVERIF")) return lookup(lang, "verdict.sin");
   return x;
 }
 
-export function riskRuleLabel(rule?: string | null): string {
-  const map: Record<string, string> = {
-    discrepancia: "Las fuentes del mismo brote no coinciden",
-    baja_confianza: "Relevante, pero sin evidencia suficiente",
-    human: "Pasa a revisión humana",
-    nli_contradicted: "Choca con la ficha oficial",
-    score_high: "Riesgo alto por varias señales",
-    supported_low_risk: "Coincide con evidencia oficial y riesgo bajo",
-    score_mid: "Señales mixtas; no se da por bueno",
-    insufficient_evidence: "No hay bastante para respaldar ni contradecir",
-    cifra_parte: "La cifra no cuadra con el parte oficial",
-    cifra_difiere: "La cifra difiere del parte oficial",
-    hitl_validado: "Un analista lo validó",
-    hitl_descartado: "Un analista lo descartó",
-    hitl_modificado: "Un analista pidió corrección; sigue en revisión",
-  };
-  return map[rule || ""] || "";
+export function riskRuleLabel(rule?: string | null, lang: Lang = "es"): string {
+  const key = `rule.${rule || ""}`;
+  const hit = lookup(lang, key);
+  return hit === key ? "" : hit;
 }
 
-export function stanceLabel(v?: string | null): string {
+export function stanceLabel(v?: string | null, lang: Lang = "es"): string {
   const x = (v || "").trim();
-  if (!x) return "Sin postura";
+  if (!x) return lookup(lang, "stance.empty");
   const up = x.toUpperCase();
-  if (up === "SUPPORTED" || up.includes("RESPALD")) return "Respaldado";
-  if (up === "CONTRADICTED" || up.includes("CONTRAD")) return "Contradicho";
-  if (up === "UNKNOWN") return "Sin verificar";
+  if (up === "SUPPORTED" || up.includes("RESPALD")) return lookup(lang, "verdict.respaldado");
+  if (up === "CONTRADICTED" || up.includes("CONTRAD")) return lookup(lang, "verdict.contradicho");
+  if (up === "UNKNOWN") return lookup(lang, "verdict.sin");
   return x;
 }
 
-export function entityKindLabel(kind: string): string {
-  const map: Record<string, string> = {
-    DISEASE: "Enfermedad",
-    ANIMAL: "Animal",
-    COUNTRY: "País",
-    ORG: "Organización",
-  };
-  return map[kind] || kind;
+export function entityKindLabel(kind: string, lang: Lang = "es"): string {
+  const key = `entity.${kind}`;
+  const hit = lookup(lang, key);
+  return hit === key ? kind : hit;
 }
 
 export function riskTone(score: number | null | undefined): "low" | "mid" | "high" {

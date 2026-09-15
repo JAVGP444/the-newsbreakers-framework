@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { api, type SourceRow } from "../api";
 import { filtersToSearch, type ObservatoryFilters } from "../filters";
+import { useLocale } from "../locale";
 
 export default function SourcesPanel({
   sources,
@@ -12,6 +13,7 @@ export default function SourcesPanel({
   filters: ObservatoryFilters;
   onSaved: () => Promise<void> | void;
 }) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
@@ -29,10 +31,10 @@ export default function SourcesPanel({
       await api.saveSource({ name, rss_url: url, base_url: url, type, active: true }, true);
       setName("");
       setUrl("");
-      setNote("Fuente agregada. Disponible para ingesta; el contraste la marcará como usada cuando participe.");
+      setNote(t("sources.added"));
       await onSaved();
     } catch (err) {
-      setNote(err instanceof Error ? err.message : "No se pudo agregar.");
+      setNote(err instanceof Error ? err.message : t("sources.addFail"));
     }
   }
 
@@ -43,48 +45,47 @@ export default function SourcesPanel({
 
   return (
     <section className="viz">
-      <h3>Fuentes</h3>
+      <h3>{t("sources.title")}</h3>
       <p className="muted">
-        Disponibles: {sources.length}. Usadas en contraste: {used.length}. Tener OMS en el catálogo no cuenta como haberla
-        consultado.
+        {t("sources.lead", { n: sources.length, used: used.length })}
       </p>
       <form className="filter-row" onSubmit={add}>
         <label>
-          Nombre
+          {t("sources.name")}
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="WOAH / WAHIS" />
         </label>
         <label>
-          URL / RSS
+          {t("sources.url")}
           <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" />
         </label>
         <label>
-          Tipo
+          {t("sources.type")}
           <select value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="oficial">Oficial</option>
-            <option value="cientifica">Científica</option>
-            <option value="medio">Medio</option>
-            <option value="foro">Foro</option>
-            <option value="normativa">Normativa</option>
+            <option value="oficial">{t("type.oficial")}</option>
+            <option value="cientifica">{t("type.cientifica")}</option>
+            <option value="medio">{t("type.medio")}</option>
+            <option value="foro">{t("type.foro")}</option>
+            <option value="normativa">{t("type.normativa")}</option>
           </select>
         </label>
         <button type="submit" className="run">
-          Agregar
+          {t("sources.add")}
         </button>
       </form>
       {note ? <p className="muted">{note}</p> : null}
-      {!sources.length ? <p className="muted">Todavía no hay fuentes en el catálogo.</p> : null}
+      {!sources.length ? <p className="muted">{t("sources.empty")}</p> : null}
       <div className="source-table-wrap">
         <table className="source-table">
           <thead>
             <tr>
-              <th>Fuente</th>
-              <th>Tipo</th>
-              <th>País</th>
-              <th>Método</th>
-              <th>Última captura</th>
-              <th>Documentos</th>
-              <th>Usada en contraste</th>
-              <th>Activa</th>
+              <th>{t("sources.col.source")}</th>
+              <th>{t("sources.col.type")}</th>
+              <th>{t("sources.col.country")}</th>
+              <th>{t("sources.col.method")}</th>
+              <th>{t("sources.col.last")}</th>
+              <th>{t("sources.col.docs")}</th>
+              <th>{t("sources.col.used")}</th>
+              <th>{t("sources.col.active")}</th>
             </tr>
           </thead>
           <tbody>
@@ -101,12 +102,12 @@ export default function SourcesPanel({
                   <td>{s.type || "—"}</td>
                   <td>{s.country || "—"}</td>
                   <td>{s.access_method || "—"}</td>
-                  <td>{s.last_checked || "Nunca"}</td>
+                  <td>{s.last_checked || t("sources.never")}</td>
                   <td>{s.article_count ?? 0}</td>
                   <td>{s.evidence_uses ?? 0}</td>
                   <td>
                     <button type="button" className={`chip source-health ${status}`} onClick={() => toggle(s)}>
-                      {s.active === 0 || s.active === false ? "Inactiva" : "Activa"}
+                      {s.active === 0 || s.active === false ? t("sources.off") : t("sources.on")}
                     </button>
                   </td>
                 </tr>
@@ -117,7 +118,7 @@ export default function SourcesPanel({
       </div>
       {extra ? (
         <button type="button" className="leer-mas-btn" onClick={() => setOpen((v) => !v)}>
-          {open ? "Leer menos" : "Leer más"}
+          {open ? t("common.less") : t("common.more")}
         </button>
       ) : null}
     </section>

@@ -2,9 +2,8 @@
 # Crea .app + .pkg + .dmg y deja la app en ~/Applications.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-APP_NAME="NewsBreakers 2.59.54 a.m."
 STAGE="$(mktemp -d /tmp/tnb-mac.XXXX)"
-APP="$STAGE/${APP_NAME}.app"
+APP="$STAGE/NewsBreakers.app"
 USER_APPS="$HOME/Applications"
 DESK="$HOME/Desktop"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$ROOT/dist" "$USER_APPS"
@@ -50,11 +49,11 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>NewsBreakers 2.59.54 a.m.</string>
-  <key>CFBundleDisplayName</key><string>NewsBreakers 2.59.54 a.m.</string>
+  <key>CFBundleName</key><string>The NewsBreakers</string>
+  <key>CFBundleDisplayName</key><string>The NewsBreakers</string>
   <key>CFBundleIdentifier</key><string>mx.newsbreakers.observatorio</string>
-  <key>CFBundleVersion</key><string>2.59.54</string>
-  <key>CFBundleShortVersionString</key><string>2.59.54</string>
+  <key>CFBundleVersion</key><string>1.0.3</string>
+  <key>CFBundleShortVersionString</key><string>1.0.3</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleExecutable</key><string>NewsBreakers</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
@@ -89,20 +88,18 @@ if [ ! -f "$APP/Contents/Resources/framework/frontend/dist/index.html" ]; then
 fi
 
 cat > "$STAGE/INSTALAR.txt" <<'TXT'
-NewsBreakers 2.59.54 a.m.
+The NewsBreakers
 
-1. Arrastra la app a la carpeta Aplicaciones (el atajo de este disco).
+1. Arrastra NewsBreakers a la carpeta Aplicaciones (el atajo de este disco).
 2. Ábrela desde Aplicaciones, no desde este disco.
-3. La primera vez tarda un minuto (prepara Python del usuario).
+3. La primera vez tarda un minuto (instala Python del usuario).
 4. Si macOS dice que no se puede abrir: clic derecho → Abrir.
 
-También hay un .pkg en el Escritorio: doble clic e Instalar.
+También está The-NewsBreakers.pkg en el Escritorio: doble clic e Instalar.
 TXT
 ln -s /Applications "$STAGE/Aplicaciones"
 
-osascript -e 'tell application "NewsBreakers 2.59.54 a.m." to quit' >/dev/null 2>&1 || true
 osascript -e 'tell application "The NewsBreakers" to quit' >/dev/null 2>&1 || true
-osascript -e 'tell application "NewsBreakers" to quit' >/dev/null 2>&1 || true
 sleep 1
 
 install_user_app() {
@@ -112,26 +109,27 @@ install_user_app() {
   xattr -cr "$dest" 2>/dev/null || true
 }
 
-if [ -w "$USER_APPS" ] && { [ ! -e "$USER_APPS/${APP_NAME}.app" ] || [ -w "$USER_APPS/${APP_NAME}.app" ]; }; then
-  install_user_app "$USER_APPS/${APP_NAME}.app" || true
+if [ -w "$USER_APPS" ] && { [ ! -e "$USER_APPS/NewsBreakers.app" ] || [ -w "$USER_APPS/NewsBreakers.app" ]; }; then
+  install_user_app "$USER_APPS/NewsBreakers.app" || true
 fi
-install_user_app "$DESK/${APP_NAME}.app"
+# Copia que el usuario puede abrir sin admin (junto al .pkg)
+install_user_app "$DESK/NewsBreakers.app"
 
 PKGROOT="$(mktemp -d /tmp/tnb-pkg.XXXX)"
 mkdir -p "$PKGROOT/Applications"
-cp -R "$APP" "$PKGROOT/Applications/${APP_NAME}.app"
-pkgbuild --identifier mx.newsbreakers.observatorio --version 2.59.54 \
+cp -R "$APP" "$PKGROOT/Applications/NewsBreakers.app"
+pkgbuild --identifier mx.newsbreakers.observatorio --version 1.0.3 \
   --install-location / --root "$PKGROOT" \
-  "$DESK/NewsBreakers-2.59.54.pkg" >/tmp/tnb-pkg.log
-cp "$DESK/NewsBreakers-2.59.54.pkg" "$ROOT/dist/NewsBreakers-2.59.54.pkg"
+  "$DESK/The-NewsBreakers.pkg" >/tmp/tnb-pkg.log
+cp "$DESK/The-NewsBreakers.pkg" "$ROOT/dist/The-NewsBreakers.pkg"
 rm -rf "$PKGROOT"
 
-rm -f "$DESK/NewsBreakers-2.59.54.dmg" "$ROOT/dist/NewsBreakers-2.59.54.dmg"
-hdiutil create -volname "NewsBreakers 2.59.54 a.m." -srcfolder "$STAGE" -ov -format UDZO "$DESK/NewsBreakers-2.59.54.dmg" >/tmp/tnb-dmg.log
-cp "$DESK/NewsBreakers-2.59.54.dmg" "$ROOT/dist/NewsBreakers-2.59.54.dmg"
+rm -f "$DESK/The-NewsBreakers.dmg" "$ROOT/dist/The-NewsBreakers.dmg"
+hdiutil create -volname "The NewsBreakers" -srcfolder "$STAGE" -ov -format UDZO "$DESK/The-NewsBreakers.dmg" >/tmp/tnb-dmg.log
+cp "$DESK/The-NewsBreakers.dmg" "$ROOT/dist/The-NewsBreakers.dmg"
 rm -rf "$STAGE"
 
-echo "App:     $DESK/${APP_NAME}.app"
-echo "Paquete: $DESK/NewsBreakers-2.59.54.pkg"
-echo "Disco:   $DESK/NewsBreakers-2.59.54.dmg"
-open "$DESK/${APP_NAME}.app" || true
+echo "App:     $DESK/NewsBreakers.app"
+echo "Paquete: $DESK/The-NewsBreakers.pkg"
+echo "Disco:   $DESK/The-NewsBreakers.dmg"
+open "$DESK/NewsBreakers.app" || true
