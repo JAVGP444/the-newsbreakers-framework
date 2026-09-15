@@ -61,6 +61,24 @@ export const DISEASE_VISUAL: Record<string, { label: string; hue: string }> = {
   fiebre_porcina_clasica: { label: "PPC", hue: "#4a1942" },
 };
 
+export const MAP_DISEASE_COLOR: Record<string, { fill: string; stroke: string; label: string }> = {
+  gusano_barrenador: { fill: "#2dd4bf", stroke: "#99f6e4", label: "Gusano barrenador" },
+  gripe_aviar: { fill: "#38bdf8", stroke: "#bae6fd", label: "Gripe aviar" },
+  fiebre_porcina_clasica: { fill: "#c084fc", stroke: "#e9d5ff", label: "PPC" },
+};
+
+export function mapDiseaseStyle(disease?: string | null) {
+  return MAP_DISEASE_COLOR[disease || ""] || { fill: "#94a3b8", stroke: "#cbd5e1", label: "Varias o sin etiqueta" };
+}
+
+export function riskHint(score?: number | null) {
+  if (score == null || Number.isNaN(score)) return "sin score";
+  const n = Math.round(score);
+  if (n >= 70) return `alto ${n}`;
+  if (n >= 40) return `medio ${n}`;
+  return `bajo ${n}`;
+}
+
 export function shortChartDate(iso?: string | null): string {
   if (!iso || iso === "—" || iso === "Sin fecha") return iso || "Sin fecha";
   const raw = iso.length === 10 ? `${iso}T12:00:00` : iso;

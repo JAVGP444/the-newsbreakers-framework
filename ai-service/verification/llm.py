@@ -85,7 +85,7 @@ def _parse_llm_json(text: str) -> dict[str, Any] | None:
 
 
 def _resolve_provider() -> tuple[str, dict[str, str]] | None:
-    from config.license import allows
+    from config.caps import allows
 
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     if openai_key and allows("llm"):

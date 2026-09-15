@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -98,40 +99,13 @@ def _api_token() -> str:
     return (os.environ.get("TNB_API_TOKEN") or "").strip()
 
 
-def _license_status() -> dict[str, Any]:
-    from config.license import public_status
-
-    return public_status()
-
-
-class LicenseIn(BaseModel):
-    key: str = ""
-
-
-class AuthIn(BaseModel):
-    email: str = ""
-    password: str = ""
-    key: str = ""
-    device_id: str = ""
-    device_name: str = ""
-
-
-class DeviceIn(BaseModel):
-    device_id: str = ""
-    device_name: str = ""
-
-
-def _session_token(request: Request) -> str:
-    return (request.headers.get("X-TNB-Session") or request.headers.get("x-tnb-session") or "").strip()
-
-
-def _need_session(request: Request) -> dict:
-    from config.accounts import session_user
-
-    user = session_user(_session_token(request))
-    if not user or not user.get("ok"):
-        raise HTTPException(status_code=401, detail="need_login")
-    return user
+@app.middleware("http")
+async def no_store_ui(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.endswith(".html") or path.endswith(".js") or path.endswith(".css"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.middleware("http")
@@ -157,15 +131,48 @@ class TranslateIn(BaseModel):
     texts: list[str] = []
 
 
-def _need_license() -> None:
-    from config.license import is_licensed
+class SourceIn(BaseModel):
+    source_id: str = ""
+    name: str = ""
+    domain: str = ""
+    country: str = ""
+    language: str = "es"
+    type: str = "medio"
+    category: str = ""
+    priority: str = "normal"
+    access_method: str = "rss"
+    rss_url: str = ""
+    base_url: str = ""
+    frequency_minutes: int = 60
+    confidence: int | None = None
+    active: bool = True
 
-    if not is_licensed():
-        raise HTTPException(status_code=402, detail="need_license")
+
+class TermIn(BaseModel):
+    term: str = ""
+    category: str = ""
+    label: str = ""
+    weight: int = 2
+    active: bool = True
+    term_id: str = ""
+
+
+class NarrativeReviewIn(BaseModel):
+    human_label: str
+    reason: str = ""
+    analyst: str = "analista"
+
+
+_store_lock = threading.Lock()
+_store_instance: Store | None = None
 
 
 def _store() -> Store:
-    return Store()
+    global _store_instance
+    with _store_lock:
+        if _store_instance is None:
+            _store_instance = Store()
+        return _store_instance
 
 
 def _backfill_thumb_ids(content_ids: list[str]) -> None:
@@ -181,145 +188,10 @@ def _backfill_thumb_ids(content_ids: list[str]) -> None:
         store.close()
 
 
-@app.get("/license")
-def license_get():
-    return _license_status()
-
-
-@app.post("/license")
-def license_activate(body: LicenseIn, request: Request):
-    from config.accounts import bind_license, session_user
-    from config.license import normalize_key, save_key
-
-    key = normalize_key(body.key or "")
-    if not key.startswith("TNB1.") or len(key) > 800:
-        raise HTTPException(status_code=400, detail="clave inválida")
-    user = session_user(_session_token(request))
-    device = (request.headers.get("X-TNB-Device") or "").strip()
-    if user and user.get("email") and device:
-        out = bind_license(user["email"], key, device, request.headers.get("X-TNB-Device-Name") or "")
-        if not out.get("ok"):
-            detail = out.get("reason") or "clave inválida"
-            code = 409 if detail == "cupo" else 400
-            raise HTTPException(status_code=code, detail=detail)
-        return {**_license_status(), "account": out}
-    info = save_key(key)
-    if not info.get("ok"):
-        raise HTTPException(status_code=400, detail=info.get("reason") or "clave inválida")
-    return _license_status()
-
-
-@app.post("/auth/register")
-def auth_register(body: AuthIn):
-    from config.accounts import register
-
-    out = register(
-        body.email,
-        body.password,
-        license_key=body.key,
-        device_id=body.device_id,
-        device_name=body.device_name,
-    )
-    if not out.get("ok"):
-        reason = out.get("reason") or "error"
-        code = 409 if reason in {"existe", "cupo"} else 400
-        raise HTTPException(status_code=code, detail=reason)
-    return out
-
-
-@app.post("/auth/login")
-def auth_login(body: AuthIn):
-    from config.accounts import login
-
-    out = login(
-        body.email,
-        body.password,
-        device_id=body.device_id,
-        device_name=body.device_name,
-        license_key=body.key,
-    )
-    if not out.get("ok"):
-        reason = out.get("reason") or "error"
-        code = 409 if reason == "cupo" else 401 if reason == "credenciales" else 400
-        raise HTTPException(status_code=code, detail=reason)
-    return out
-
-
-@app.post("/auth/logout")
-def auth_logout(request: Request):
-    from config.accounts import logout
-
-    logout(_session_token(request))
-    return {"ok": True}
-
-
-@app.get("/auth/me")
-def auth_me(request: Request):
-    return _need_session(request)
-
-
-@app.get("/auth/devices")
-def auth_devices(request: Request):
-    user = _need_session(request)
-    return {"ok": True, "devices": user.get("devices") or [], "max": user.get("device_max"), "n": user.get("device_n")}
-
-
-@app.post("/auth/devices/revoke")
-def auth_revoke(body: DeviceIn, request: Request):
-    from config.accounts import revoke_device
-
-    user = _need_session(request)
-    out = revoke_device(user["email"], body.device_id)
-    if not out.get("ok"):
-        raise HTTPException(status_code=400, detail=out.get("reason") or "error")
-    return out
-
-
-@app.get("/auth/admin/accounts")
-def auth_admin(request: Request):
-    from config.accounts import admin_accounts
-
-    token = request.headers.get("X-TNB-Seller") or request.query_params.get("token") or ""
-    out = admin_accounts(token)
-    if not out.get("ok"):
-        raise HTTPException(status_code=401, detail="seller")
-    return out
-
-
 @app.get("/health")
 def health():
-    store = _store()
-    from database.cnn_dataset import dataset_counts
-    from database.mine_state import mine_banner
-    from database.mysql_mirror import mysql_status
-
-    mysql = mysql_status()
-    mine = mine_banner()
-    last = store.last_mining_run() or {}
-    kpis = store.kpis()
-    lag = store.mysql_lag_info()
-    return {
-        "status": "ok",
-        "service": "tnb-pipeline",
-        "db": str(DB_PATH),
-        "db_exists": DB_PATH.is_file(),
-        "project_root": str(PROJECT_ROOT),
-        "kpis": kpis,
-        "mysql": bool(mysql.get("connected")),
-        "mysql_error": None if mysql.get("connected") else (mysql.get("error") or "MySQL no conectado"),
-        "mysql_lag_seconds": lag.get("mysql_lag_seconds"),
-        "mysql_stale": lag.get("mysql_stale"),
-        "last_mine": mine.get("last_mine") or last.get("started_at") or last.get("finished_at"),
-        "next_mine_minutes": mine.get("next_mine_minutes"),
-        "mine": mine,
-        "cnn_dataset": dataset_counts(),
-        "postgres": bool(os.getenv("POSTGRES_URL")),
-        "mongo": bool(os.getenv("MONGO_URL")),
-        "redis": bool(os.getenv("REDIS_URL")),
-        "llm_does_not_decide_truth": True,
-        "queues": list(QUEUES),
-        "license": _license_status(),
-    }
+    """El .app espera un 200 para abrir la ventana. El resto va por /stats."""
+    return {"status": "ok", "service": "newsbreakers"}
 
 
 @app.get("/sources")
@@ -337,6 +209,49 @@ def sources():
             }
         )
     return {"count": len(rows), "sources": rows}
+
+
+@app.post("/sources")
+def source_create(body: SourceIn):
+    import hashlib
+    from urllib.parse import urlparse
+
+    name = (body.name or "").strip()
+    url = (body.rss_url or body.base_url or "").strip()
+    if not name and not url:
+        raise HTTPException(400, "name o url")
+    host = (urlparse(url).hostname or body.domain or "").lower().removeprefix("www.")
+    sid = (body.source_id or "").strip() or "SRC-" + hashlib.sha256((name + host).encode()).hexdigest()[:10]
+    store = _store()
+    store.upsert_source(
+        {
+            "source_id": sid,
+            "name": name or sid,
+            "domain": body.domain or host,
+            "country": body.country or None,
+            "language": body.language or "es",
+            "type": body.type or "medio",
+            "category": body.category or None,
+            "priority": body.priority or "normal",
+            "access_method": body.access_method or "rss",
+            "rss_url": body.rss_url or None,
+            "base_url": body.base_url or url or None,
+            "frequency_minutes": body.frequency_minutes or 60,
+            "confidence": body.confidence,
+            "active": body.active,
+        }
+    )
+    row = store.get_source(sid)
+    return {"ok": True, "source": row}
+
+
+@app.patch("/sources/{source_id}")
+def source_patch(source_id: str, body: SourceIn):
+    payload = {k: v for k, v in body.model_dump(exclude_unset=True).items() if k != "source_id"}
+    row = _store().patch_source(source_id, payload)
+    if not row:
+        raise HTTPException(404, "source not found")
+    return {"ok": True, "source": row}
 
 
 @app.get("/articles")
@@ -389,10 +304,6 @@ def articles(
     )
     payload = store.paged_articles(query)
     rows = payload["articles"]
-    from config.license import PREVIEW_N, is_licensed
-
-    if not is_licensed():
-        rows = rows[:PREVIEW_N]
     if thumb_limit > 0:
         batch = rows if backfill_all else rows[:thumb_limit]
         ids = [str(r.get("content_id") or "") for r in batch if r.get("content_id")]
@@ -418,10 +329,9 @@ def articles(
             }
         out.append(fresh)
     return {
-        "count": len(out) if not is_licensed() else payload["count"],
-        "page": 1 if not is_licensed() else payload["page"],
-        "page_size": PREVIEW_N if not is_licensed() else payload["page_size"],
-        "preview": not is_licensed(),
+        "count": payload["count"],
+        "page": payload["page"],
+        "page_size": payload["page_size"],
         "articles": out,
     }
 
@@ -470,10 +380,11 @@ def article_detail(content_id: str):
     images = store.list_images(content_id)
     quality = store.explanation_quality(row, claims, evidence, images)
     local_text = store.local_explanation(row, claims, evidence)
-    from database.geo import country_info, resolve_article_country
+    from database.geo import resolve_article_place
 
     extra = " ".join((c.get("location") or "") for c in claims)
-    geo = country_info(resolve_article_country(row, extra))
+    extra = f"{extra} {row.get('title') or ''} {(row.get('text') or '')[:800]}"
+    geo = resolve_article_place(row, extra)
     timeline = article_timeline(row)
     row = dict(store.public_row(row) or row)
     mv = row.get("model_versions")
@@ -511,6 +422,13 @@ def article_detail(content_id: str):
     row["explanation_quality"] = quality
     evidence = [store.public_row(e) or e for e in evidence]
     similar = similar_or_related(store, content_id, limit=5)
+    narrative = None
+    try:
+        from signals import analyze_article
+
+        narrative = analyze_article(row, claims, evidence)
+    except Exception:
+        narrative = None
     return {
         "article": row,
         "source": store.get_source(row.get("source_id") or ""),
@@ -526,22 +444,61 @@ def article_detail(content_id: str):
         "quality": quality,
         "audit": store.list_audit(content_id, limit=50),
         "alerts": store.alerts_for_article(content_id),
+        "narrative": narrative,
     }
 
 
 @app.get("/claims")
-def claims(limit: int = 200):
-    return {"count": _store().count_claims(), "claims": _store().list_claims(limit=limit)}
+def claims(
+    limit: int = 400,
+    narrative_id: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+):
+    store = _store()
+    rows = store.list_claims(limit=limit)
+    if narrative_id:
+        members = {
+            r["content_id"]
+            for r in store.fetchall(
+                "SELECT content_id FROM narrative_members WHERE narrative_id=?",
+                (narrative_id,),
+            )
+        }
+        if members:
+            rows = [c for c in rows if c.get("content_id") in members]
+    if q:
+        needle = q.lower()
+        rows = [c for c in rows if needle in str(c.get("text") or "").lower()]
+    from signals import modality
+
+    for row in rows:
+        row["modality"] = row.get("modality") or modality(row.get("text") or "")
+    return {"count": len(rows), "claims": rows}
+
+
+@app.get("/evidence")
+def evidence_list(limit: int = 400):
+    store = _store()
+    rows = store.list_evidence()[:limit]
+    claims = {c["claim_id"]: c for c in store.list_claims(limit=1200)}
+    out = []
+    for ev in rows:
+        claim = claims.get(ev.get("claim_id") or "") or {}
+        item = dict(ev)
+        item["claim_text"] = claim.get("text")
+        item["content_id"] = claim.get("content_id")
+        out.append(item)
+    return {"count": len(out), "evidence": out}
 
 
 @app.get("/alerts")
 def alerts(
     status: str | None = Query(default=None),
-    include: str | None = Query(default="article,claims,evidence"),
+    include: str | None = Query(default=None),
 ):
     store = _store()
     want = bool(include)
-    rows = store.list_alerts(limit=200, status=status, include=want)
+    rows = store.list_alerts(limit=50, status=status, include=want)
     if not want:
         for row in rows:
             art = store.get_article(row.get("content_id") or "")
@@ -612,6 +569,135 @@ def serve_image(image_id: str):
 @app.get("/narratives")
 def narratives():
     return {"narratives": _store().list_narratives()}
+
+
+@app.get("/narratives/overview")
+def narratives_overview(
+    disease: str | None = Query(default=None),
+    date_from: str | None = Query(default=None, alias="from"),
+    date_to: str | None = Query(default=None, alias="to"),
+    country: str | None = Query(default=None),
+    q: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    force_min: int = Query(default=1, ge=1, le=5),
+):
+    from surveillance import characterize, dossier
+    from signals import METHOD, PRINCIPLE, corpus_pack
+
+    query = _query(disease=disease, date_from=date_from, date_to=date_to, country=country, q=q)
+    store = _store()
+    store.apply_keyword_bank()
+    articles = store.filtered_articles(disease, limit=220, q=query)
+    sources = store.list_sources()
+    names = {s.get("source_id"): s.get("name") for s in sources}
+    for art in articles:
+        art["source_name"] = names.get(art.get("source_id")) or art.get("source_id")
+    claims = store.list_claims(limit=1200)
+    evidence = store.list_evidence()
+    pack = characterize(articles, claims=claims, evidence=evidence, sources=sources)
+    graph_pack = corpus_pack(articles, force_min=force_min)
+    if category:
+        cat = category.strip().lower()
+        graph_pack["pairs"] = [p for p in graph_pack.get("pairs") or [] if p.get("a") == cat or p.get("b") == cat]
+        nodes = [n for n in (graph_pack.get("graph") or {}).get("nodes") or [] if n.get("id") == cat]
+        keep = {n["id"] for n in nodes}
+        for p in graph_pack["pairs"]:
+            keep.add(p["a"])
+            keep.add(p["b"])
+        graph = graph_pack.get("graph") or {}
+        graph_pack["graph"] = {
+            "nodes": [n for n in (graph.get("nodes") or []) if n.get("id") in keep],
+            "edges": [e for e in (graph.get("edges") or []) if e.get("from") in keep and e.get("to") in keep],
+            "empty": False,
+        }
+        graph_pack["graph"]["empty"] = not graph_pack["graph"]["edges"]
+    pack["principle"] = PRINCIPLE
+    pack["method"] = METHOD
+    pack["cloud"] = graph_pack.get("cloud") or pack.get("cloud")
+    pack["pairs"] = graph_pack.get("pairs") or pack.get("pairs")
+    pack["graph"] = graph_pack.get("graph") or pack.get("graph")
+    pack["categories"] = graph_pack.get("categories") or pack.get("categories")
+    pack["structures"] = graph_pack.get("structures") or pack.get("structures")
+    pack["bank"] = graph_pack.get("bank") or pack.get("bank")
+    pack["sample"] = graph_pack.get("sample") or pack.get("sample")
+    pack["clusters"] = store.list_narratives()
+    return pack
+
+
+@app.get("/narratives/{narrative_id}")
+def narrative_detail(narrative_id: str):
+    from surveillance import characterize, dossier
+
+    store = _store()
+    store.apply_keyword_bank()
+    articles = store.filtered_articles(None, limit=220)
+    sources = store.list_sources()
+    names = {s.get("source_id"): s.get("name") for s in sources}
+    for art in articles:
+        art["source_name"] = names.get(art.get("source_id")) or art.get("source_id")
+    pack = characterize(
+        articles,
+        claims=store.list_claims(limit=1200),
+        evidence=store.list_evidence(),
+        sources=sources,
+    )
+    found = dossier(pack, narrative_id)
+    if not found:
+        raise HTTPException(404, "narrative not found")
+    return found
+
+
+@app.post("/narratives/{narrative_id}/review")
+def narrative_review(narrative_id: str, body: NarrativeReviewIn):
+    store = _store()
+    store.audit(
+        "narrative",
+        narrative_id,
+        "review",
+        {"human_label": body.human_label, "reason": body.reason, "analyst": body.analyst},
+    )
+    return {"ok": True, "narrative_id": narrative_id, "human_label": body.human_label}
+
+
+@app.get("/banks/terms")
+def banks_terms(category: str | None = Query(default=None)):
+    store = _store()
+    store.seed_keyword_bank()
+    rows = store.list_keyword_terms(category)
+    return {"count": len(rows), "terms": rows, "principle": "peso ≠ malicia. El término es una señal, no un veredicto."}
+
+
+@app.post("/banks/terms")
+def banks_term_create(body: TermIn):
+    if not (body.term or "").strip() or not (body.category or "").strip():
+        raise HTTPException(400, "term y category")
+    row = _store().upsert_keyword_term(body.model_dump())
+    return {"ok": True, "term": row}
+
+
+@app.patch("/banks/terms/{term_id}")
+def banks_term_patch(term_id: str, body: TermIn):
+    store = _store()
+    existing = store.fetchone("SELECT * FROM keyword_terms WHERE term_id=?", (term_id,))
+    if not existing:
+        raise HTTPException(404, "term not found")
+    payload = dict(existing)
+    data = body.model_dump()
+    for key in ("term", "category", "label", "weight", "active"):
+        if key in data and data[key] not in {"", None}:
+            payload[key] = data[key]
+    if body.active is False:
+        payload["active"] = False
+    payload["term_id"] = term_id
+    row = store.upsert_keyword_term(payload)
+    return {"ok": True, "term": row}
+
+
+@app.delete("/banks/terms/{term_id}")
+def banks_term_delete(term_id: str):
+    if not _store().delete_keyword_term(term_id):
+        raise HTTPException(404, "term not found")
+    return {"ok": True}
 
 
 @app.get("/kpis")
@@ -748,28 +834,17 @@ def geo(
     q: str | None = Query(default=None),
     origin: str | None = Query(default=None),
     raw_format: str | None = Query(default=None),
-    level: str = Query(default="country"),
+    level: str = Query(default="place"),
 ):
     query = _common_query(disease, compare, date_from, date_to, country, verdict, source, q, raw_format, origin=origin)
     countries = _store().geo_table(disease, q=query)
     located = [c for c in countries if not c.get("unlocated")]
     unlocated = [c for c in countries if c.get("unlocated")]
     return {
-        "level": level,
+        "level": level or "place",
         "countries": countries,
         "unlocated": unlocated,
-        "points": [
-            {
-                "country": c["country"],
-                "name": c["name"],
-                "lat": c.get("lat"),
-                "lng": c.get("lng"),
-                "count": c["count"],
-                "articles": c.get("articles") or [],
-                "unlocated": bool(c.get("unlocated")),
-            }
-            for c in located
-        ],
+        "points": located,
     }
 
 
@@ -853,7 +928,6 @@ def cycle(
     demo_seed: bool = False,
     force_due: bool = False,
 ):
-    _need_license()
     n = MAX_SOURCES if max_sources is None else max_sources
     return run_cycle(max_sources=n, demo_seed=demo_seed, force_due=force_due)
 
@@ -1001,7 +1075,6 @@ async def cnn_predict(
         path = tmp.name
     else:
         raise HTTPException(400, "file or sample_id required")
-    _need_license()
     try:
         return _predict_path(path, url=page_url)
     finally:

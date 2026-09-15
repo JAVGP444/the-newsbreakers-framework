@@ -14,11 +14,14 @@ type Props = {
   nodes: GraphNode[];
   edges: GraphEdge[];
   height?: number;
+  hideEdgeLabels?: boolean;
+  selectedId?: string | null;
   onNode?: (node: GraphNode) => void;
 };
 
-export default function NetworkGraph({ nodes, edges, height = 480, onNode }: Props) {
+export default function NetworkGraph({ nodes, edges, height = 480, hideEdgeLabels, selectedId, onNode }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const netRef = useRef<Network | null>(null);
   const onNodeRef = useRef(onNode);
   onNodeRef.current = onNode;
 
@@ -31,7 +34,7 @@ export default function NetworkGraph({ nodes, edges, height = 480, onNode }: Pro
           label: n.label,
           value: n.value || 1,
           group: n.group,
-          title: `Pulsa para ver en la sala · ${n.label}`,
+          title: `Pulsa para elegir · ${n.label}`,
           color: {
             background: COLORS[n.group] || "#94a3b8",
             border: "#e2e8f0",
@@ -47,7 +50,7 @@ export default function NetworkGraph({ nodes, edges, height = 480, onNode }: Pro
           id: `${e.from}-${e.to}-${i}`,
           from: e.from,
           to: e.to,
-          label: e.label || "",
+          label: hideEdgeLabels ? "" : e.label || "",
           color: { color: "#334155", highlight: "#2dd4bf", hover: "#5eead4" },
           font: { color: "#94a3b8", size: 10, strokeWidth: 0 },
         }))
@@ -59,6 +62,7 @@ export default function NetworkGraph({ nodes, edges, height = 480, onNode }: Pro
       nodes: { shape: "dot", scaling: { min: 12, max: 36 }, chosen: true },
       edges: { smooth: true, width: 1.4 },
     });
+    netRef.current = network;
     network.on("click", (params) => {
       const nid = params.nodes?.[0];
       if (!nid) return;
@@ -71,8 +75,22 @@ export default function NetworkGraph({ nodes, edges, height = 480, onNode }: Pro
     network.on("blurNode", () => {
       if (ref.current) ref.current.style.cursor = "grab";
     });
-    return () => network.destroy();
-  }, [nodes, edges]);
+    return () => {
+      network.destroy();
+      netRef.current = null;
+    };
+  }, [nodes, edges, hideEdgeLabels]);
+
+  useEffect(() => {
+    const network = netRef.current;
+    if (!network) return;
+    try {
+      if (selectedId) network.selectNodes([selectedId]);
+      else network.unselectAll();
+    } catch {
+      /* el punto ya no está en el recorte */
+    }
+  }, [selectedId, nodes]);
 
   return <div ref={ref} className="graph-host clickable" style={{ height, minHeight: 420 }} />;
 }

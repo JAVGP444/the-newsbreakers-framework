@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 NLI_LABELS = ("Supported", "Contradicted", "Unknown")
 MODEL_NAME = "nli_evidence_first"
-MODEL_VERSION = "lexical_v2_conservative"
+MODEL_VERSION = "lexical_v3_specific"
 
 MISINFO = (
     "laboratorio", "arma biol", "creada artificial", "creado artificial",
@@ -35,11 +35,12 @@ STOPWORDS = {
 OFFICIAL_HOSTS = (
     "woah.org", "who.int", "fao.org", "cdc.gov", "gob.mx", "usda.gov",
     "aphis.usda.gov", "paho.org", "oie.int", "ecdc.europa.eu",
+    "tahc.texas.gov", "canada.ca", "copeg.org", "senasa.gob.ar",
 )
 
 DISEASE_ANCHORS = {
     "h5n1", "h5n2", "hpai", "lpai", "influenza", "aviar", "avian", "gripe",
-    "screwworm", "barrenador", "cochliomyia", "hominivorax", "miasis",
+    "screwworm", "barrenador", "cochliomyia", "hominivorax", "miasis", "nws",
     "porcina", "swine", "csfv", "wahis", "senasica", "woah", "omsa", "aphis",
     "poultry", "aves", "corral", "ganado", "bioseguridad", "biosecurity",
 }
@@ -47,6 +48,7 @@ DISEASE_ANCHORS = {
 MIN_OVERLAP = 6
 MIN_CLAIM_TOKENS = 5
 MIN_ANCHORS = 2
+MIN_SPECIFIC = 2
 
 
 def _tokens(text: str) -> set[str]:
@@ -86,6 +88,10 @@ def stance_from_text(claim_text: str, snippet: str, url: str = "") -> str:
         return "Unknown"
     anchors = overlap & DISEASE_ANCHORS
     if len(anchors) < MIN_ANCHORS:
+        return "Unknown"
+    # La ficha debe hablar de ESTA afirmación (lugar, animal, hecho), no solo de la enfermedad.
+    specific = overlap - DISEASE_ANCHORS
+    if len(specific) < MIN_SPECIFIC:
         return "Unknown"
     return "Supported"
 
@@ -170,6 +176,11 @@ def _item_diagnostics(claim_text: str, item: dict[str, Any]) -> dict[str, Any]:
         missing.append(f"coinciden {len(overlap)} palabras con la ficha (mínimo {MIN_OVERLAP})")
     if len(anchors) < MIN_ANCHORS:
         missing.append(f"anclas de enfermedad: {len(anchors)} (mínimo {MIN_ANCHORS}: h5n1, barrenador, senasica…)")
+    specific = [w for w in overlap if w not in DISEASE_ANCHORS]
+    if len(specific) < MIN_SPECIFIC:
+        missing.append(
+            "la ficha nombra la enfermedad, pero no el hecho de la nota (lugar, animal, caso concreto)"
+        )
     return {
         "url": url,
         "official": official,

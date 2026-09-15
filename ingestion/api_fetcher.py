@@ -16,7 +16,7 @@ GDELT_QUERY = '("avian influenza" OR H5N1 OR HPAI OR screwworm OR "classical swi
 
 
 def _gdelt_max(explicit: int | None = None) -> int:
-    from config.license import COMMUNITY_CAPS, apply_cap
+    from config.caps import COMMUNITY_CAPS, apply_cap
 
     if explicit is not None:
         raw = max(1, min(250, int(explicit)))
@@ -36,7 +36,7 @@ def _lookback_days() -> int:
 
 
 def _windows_per_cycle() -> int:
-    from config.license import COMMUNITY_CAPS, apply_cap
+    from config.caps import COMMUNITY_CAPS, apply_cap
 
     try:
         raw = max(1, min(8, int(os.environ.get("TNB_GDELT_WINDOWS", "4"))))

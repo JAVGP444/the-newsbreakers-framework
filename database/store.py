@@ -9,6 +9,7 @@ import hashlib
 import json
 import sqlite3
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
@@ -20,6 +21,8 @@ _ing = str(FRAMEWORK_ROOT / "ingestion")
 if _ing not in sys.path:
     sys.path.insert(0, _ing)
 from safe_urls import public_http_url, stored_article_url
+
+_MIGRATE_LOCK = threading.Lock()
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources (
@@ -206,6 +209,24 @@ CREATE TABLE IF NOT EXISTS translation_cache (
   provider TEXT,
   created_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS keyword_terms (
+  term_id TEXT PRIMARY KEY,
+  term TEXT NOT NULL,
+  category TEXT NOT NULL,
+  label TEXT,
+  weight INTEGER DEFAULT 2,
+  active INTEGER DEFAULT 1,
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_keyword_terms_cat ON keyword_terms (category);
+
+CREATE TABLE IF NOT EXISTS narrative_members (
+  narrative_id TEXT NOT NULL,
+  content_id TEXT NOT NULL,
+  PRIMARY KEY (narrative_id, content_id)
+);
+CREATE INDEX IF NOT EXISTS idx_narrative_members_art ON narrative_members (content_id);
 """
 
 
@@ -229,6 +250,7 @@ class Store:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
         self._migrate()
+        self.seed_keyword_bank()
         self.conn.commit()
         from database.mysql_mirror import get_mirror
 
@@ -255,12 +277,26 @@ class Store:
                 ("human_reason", "TEXT"),
                 ("reviewed_at", "TEXT"),
             ],
+            "narratives": [
+                ("description", "TEXT"),
+                ("state", "TEXT"),
+                ("extra", "TEXT"),
+            ],
+            "claims": [
+                ("modality", "TEXT"),
+            ],
         }
-        for table, cols in extras.items():
-            existing = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
-            for name, typ in cols:
-                if name not in existing:
-                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
+        with _MIGRATE_LOCK:
+            for table, cols in extras.items():
+                existing = {row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")}
+                for name, typ in cols:
+                    if name in existing:
+                        continue
+                    try:
+                        self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
+                    except sqlite3.OperationalError as exc:
+                        if "duplicate column" not in str(exc).lower():
+                            raise
 
     def maybe_backfill_mysql(self) -> int:
         """Copia SQLite → MySQL la primera vez que el warehouse está vacío."""
@@ -401,6 +437,35 @@ class Store:
         )
         self._mysql("upsert_source", source, existing)
 
+    def patch_source(self, source_id: str, fields: dict[str, Any]) -> dict[str, Any] | None:
+        row = self.get_source(source_id)
+        if not row:
+            return None
+        allowed = {
+            "name",
+            "domain",
+            "country",
+            "language",
+            "type",
+            "category",
+            "priority",
+            "access_method",
+            "rss_url",
+            "base_url",
+            "frequency_minutes",
+            "confidence",
+            "active",
+        }
+        payload = dict(row)
+        for key, value in fields.items():
+            if key not in allowed:
+                continue
+            payload[key] = value
+        if "active" in fields:
+            payload["active"] = bool(fields["active"])
+        self.upsert_source(payload)
+        return self.get_source(source_id)
+
     def sync_sources(self, sources: list[dict[str, Any]]) -> int:
         for source in sources:
             self.upsert_source(source)
@@ -455,9 +520,19 @@ class Store:
             else:
                 status = "ok"
             item["article_count"] = counts.get(item.get("source_id"), 0)
+            item["evidence_uses"] = 0
             item["status"] = status
             item["healthy"] = status == "ok"
             out.append(item)
+        hosts = self.evidence_host_counts()
+        for item in out:
+            domain = str(item.get("domain") or "").lower().removeprefix("www.")
+            if domain:
+                item["evidence_uses"] = int(hosts.get(domain) or 0)
+                for host, n in hosts.items():
+                    if host == domain or host.endswith("." + domain) or domain.endswith("." + host):
+                        if n > item["evidence_uses"]:
+                            item["evidence_uses"] = n
         return out
 
     def mark_source_result(
@@ -812,10 +887,24 @@ class Store:
         )
         self._mysql("insert_evidence", row)
 
+    def evidence_host_counts(self) -> dict[str, int]:
+        from urllib.parse import urlparse
+
+        counts: dict[str, int] = {}
+        for row in self.fetchall("SELECT url FROM evidence WHERE url IS NOT NULL AND url != ''"):
+            try:
+                host = (urlparse(str(row.get("url") or "")).hostname or "").lower().removeprefix("www.")
+            except Exception:
+                continue
+            if not host:
+                continue
+            counts[host] = counts.get(host, 0) + 1
+        return counts
+
     def list_evidence(self, claim_id: str | None = None) -> list[dict[str, Any]]:
         if claim_id:
             return self.fetchall("SELECT * FROM evidence WHERE claim_id=?", (claim_id,))
-        return self.fetchall("SELECT * FROM evidence ORDER BY rowid DESC LIMIT 200")
+        return self.fetchall("SELECT * FROM evidence ORDER BY rowid DESC LIMIT 800")
 
     def insert_entity(self, row: dict[str, Any]) -> None:
         self.execute(
@@ -938,6 +1027,13 @@ class Store:
             rows = self.fetchall("SELECT * FROM alerts ORDER BY created_at DESC LIMIT ?", (limit,))
         if not include:
             return rows
+        corpus = self.fetchall(
+            "SELECT content_id, source_id, title, url FROM articles ORDER BY rowid DESC LIMIT 220"
+        )
+        sources = {
+            str(r["source_id"]): r
+            for r in self.fetchall("SELECT source_id, type, category, domain, name FROM sources")
+        }
         out = []
         for row in rows:
             item = dict(row)
@@ -945,13 +1041,16 @@ class Store:
             claims = self.list_claims(item.get("content_id") or "", limit=3)
             evidence = []
             for claim in claims:
-                evidence.extend(self.list_evidence(claim["claim_id"]))
+                cid = claim.get("claim_id")
+                if cid:
+                    evidence.extend(self.list_evidence(cid))
             item["title"] = (art or {}).get("title") or item.get("content_id")
             item["article_verdict"] = (art or {}).get("verdict")
-            item["primary_claim"] = (claims[0].get("text") if claims else None)
-            item["evidence_snippet"] = (evidence[0].get("snippet") if evidence else None)
             item["claims"] = claims
             item["evidence"] = [self.public_row(e) or e for e in evidence[:3]]
+            from database.review_contrast import attach_review_contrast
+
+            attach_review_contrast(item, claims, evidence, corpus=corpus, sources=sources)
             out.append(item)
         return out
 
@@ -1189,18 +1288,26 @@ class Store:
     def upsert_narrative(self, row: dict[str, Any]) -> None:
         prev = self.fetchone("SELECT claim_count FROM narratives WHERE narrative_id=?", (row["narrative_id"],))
         prev_count = int((prev or {}).get("claim_count") or 0)
+        extra = row.get("extra")
+        if extra is None:
+            extra = {
+                k: row.get(k)
+                for k in ("state_label", "priority", "first_seen", "last_seen", "country_n", "sources_n", "classification")
+                if row.get(k) is not None
+            }
         self.execute(
             """
             INSERT INTO narratives (
               narrative_id, label, keywords, claim_count, prev_count, growth_pct,
-              cycle_id, model_name, model_version, updated_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?)
+              cycle_id, model_name, model_version, updated_at, description, state, extra
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(narrative_id) DO UPDATE SET
               label=excluded.label, keywords=excluded.keywords,
               claim_count=excluded.claim_count, prev_count=excluded.prev_count,
               growth_pct=excluded.growth_pct, cycle_id=excluded.cycle_id,
               model_name=excluded.model_name, model_version=excluded.model_version,
-              updated_at=excluded.updated_at
+              updated_at=excluded.updated_at, description=excluded.description,
+              state=excluded.state, extra=excluded.extra
             """,
             (
                 row["narrative_id"],
@@ -1213,12 +1320,131 @@ class Store:
                 row.get("model_name"),
                 row.get("model_version"),
                 _now(),
+                row.get("description"),
+                row.get("state"),
+                extra if isinstance(extra, str) else _json(extra or {}),
             ),
         )
         self._mysql("upsert_narrative", row, prev_count)
 
     def list_narratives(self) -> list[dict[str, Any]]:
-        return self.fetchall("SELECT * FROM narratives ORDER BY claim_count DESC")
+        rows = self.fetchall("SELECT * FROM narratives ORDER BY claim_count DESC")
+        out = []
+        for row in rows:
+            item = dict(row)
+            extra = item.get("extra")
+            if isinstance(extra, str) and extra.strip():
+                try:
+                    extra = json.loads(extra)
+                except json.JSONDecodeError:
+                    extra = {}
+            if isinstance(extra, dict):
+                item["extra"] = extra
+                for key in ("priority", "state_label", "first_seen", "last_seen", "classification"):
+                    if extra.get(key) and not item.get(key):
+                        item[key] = extra.get(key)
+            out.append(item)
+        return out
+
+    def _term_id(self, category: str, term: str) -> str:
+        raw = f"{category}|{term}".strip().lower()
+        return "KW-" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+    def seed_keyword_bank(self) -> None:
+        n = self.fetchone("SELECT COUNT(*) AS n FROM keyword_terms")
+        if int((n or {}).get("n") or 0) == 0:
+            nar = str(FRAMEWORK_ROOT / "ai-service" / "narratives")
+            if nar not in sys.path:
+                sys.path.insert(0, nar)
+            from lexicon import yaml_term_rows
+
+            for row in yaml_term_rows():
+                self.upsert_keyword_term(row)
+        self.apply_keyword_bank()
+
+    def apply_keyword_bank(self) -> None:
+        nar = str(FRAMEWORK_ROOT / "ai-service" / "narratives")
+        if nar not in sys.path:
+            sys.path.insert(0, nar)
+        from lexicon import apply_term_rows
+
+        apply_term_rows(self.list_keyword_terms())
+
+    def list_keyword_terms(self, category: str | None = None) -> list[dict[str, Any]]:
+        if category:
+            return self.fetchall(
+                "SELECT * FROM keyword_terms WHERE category=? ORDER BY category, term",
+                (category,),
+            )
+        return self.fetchall("SELECT * FROM keyword_terms ORDER BY category, term")
+
+    def upsert_keyword_term(self, row: dict[str, Any]) -> dict[str, Any]:
+        term = str(row.get("term") or "").strip()
+        category = str(row.get("category") or "").strip()
+        if not term or not category:
+            raise ValueError("term y category son obligatorios")
+        tid = str(row.get("term_id") or self._term_id(category, term))
+        active = 1 if row.get("active", True) not in {0, False, "0", "false", "no"} else 0
+        try:
+            weight = max(1, min(5, int(row.get("weight") or 2)))
+        except (TypeError, ValueError):
+            weight = 2
+        self.execute(
+            """
+            INSERT INTO keyword_terms (term_id, term, category, label, weight, active, updated_at)
+            VALUES (?,?,?,?,?,?,?)
+            ON CONFLICT(term_id) DO UPDATE SET
+              term=excluded.term, category=excluded.category, label=excluded.label,
+              weight=excluded.weight, active=excluded.active, updated_at=excluded.updated_at
+            """,
+            (tid, term, category, row.get("label") or category, weight, active, _now()),
+        )
+        self.apply_keyword_bank()
+        return self.fetchone("SELECT * FROM keyword_terms WHERE term_id=?", (tid,)) or {}
+
+    def delete_keyword_term(self, term_id: str) -> bool:
+        existing = self.fetchone("SELECT term_id FROM keyword_terms WHERE term_id=?", (term_id,))
+        if not existing:
+            return False
+        self.execute("DELETE FROM keyword_terms WHERE term_id=?", (term_id,))
+        self.apply_keyword_bank()
+        return True
+
+    def persist_narrative_pack(self, pack: dict[str, Any], cycle_id: str) -> int:
+        n = 0
+        for row in pack.get("narratives") or []:
+            nid = str(row.get("narrative_id") or "")
+            if not nid:
+                continue
+            self.upsert_narrative(
+                {
+                    "narrative_id": nid,
+                    "label": row.get("label") or nid,
+                    "keywords": row.get("keywords") or [],
+                    "claim_count": int(row.get("volume") or row.get("claims_n") or 0),
+                    "growth_pct": row.get("growth_pct"),
+                    "cycle_id": cycle_id,
+                    "model_name": "narrative_surveillance",
+                    "model_version": "v1",
+                    "description": row.get("description"),
+                    "state": row.get("state"),
+                    "state_label": row.get("state_label"),
+                    "priority": row.get("priority"),
+                    "first_seen": row.get("first_seen"),
+                    "last_seen": row.get("last_seen"),
+                    "classification": row.get("classification"),
+                }
+            )
+            self.execute("DELETE FROM narrative_members WHERE narrative_id=?", (nid,))
+            for art in row.get("articles") or []:
+                cid = str(art.get("content_id") or "")
+                if cid:
+                    self.execute(
+                        "INSERT OR IGNORE INTO narrative_members (narrative_id, content_id) VALUES (?,?)",
+                        (nid, cid),
+                    )
+            n += 1
+        return n
 
     def insert_mining_run(self, row: dict[str, Any]) -> None:
         extra = row.get("extra")
@@ -1552,12 +1778,6 @@ class Store:
 
         sql = "SELECT * FROM articles WHERE 1=1"
         params: list[Any] = []
-        if q.date_from:
-            sql += " AND date(substr(coalesce(nullif(published_at,''), collected_at), 1, 10)) >= ?"
-            params.append(q.date_from)
-        if q.date_to:
-            sql += " AND date(substr(coalesce(nullif(published_at,''), collected_at), 1, 10)) <= ?"
-            params.append(q.date_to)
         if q.source_id:
             sql += " AND source_id = ?"
             params.append(q.source_id)
@@ -1625,8 +1845,13 @@ class Store:
                 blob = f"{title} {row.get('text') or ''}"
                 if should_skip(blob, source=src, title=title):
                     continue
+            day = article_day(row)
+            if q.date_from and (not day or day < str(q.date_from)[:10]):
+                continue
+            if q.date_to and (not day or day > str(q.date_to)[:10]):
+                continue
             row["disease_list"] = self.article_diseases(row)
-            row["day"] = article_day(row)
+            row["day"] = day
             out.append(row)
         if q.order == "risk_score":
             out.sort(key=lambda r: (r.get("risk_score") is None, -(r.get("risk_score") or 0), r.get("collected_at") or ""), reverse=False)
@@ -1690,18 +1915,40 @@ class Store:
         return cards
 
     def geo_table(self, disease: str | None = None, q=None) -> list[dict[str, Any]]:
-        from database.geo import country_info, resolve_article_country
+        from database.geo import resolve_article_place
 
         buckets: dict[str, dict[str, Any]] = {}
         for row in self.filtered_articles(disease, limit=8000, q=q):
-            claims = self.list_claims(row["content_id"], limit=8)
-            extra = " ".join((c.get("location") or "") for c in claims)
-            code = resolve_article_country(row, extra)
-            info = country_info(code)
-            if code in {"XX", "INT"}:
-                info = {**info, "lat": None, "lng": None, "unlocated": True}
-            bucket = buckets.setdefault(code, {**info, "count": 0, "articles": [], "unlocated": code in {"XX", "INT"}})
+            extra = f"{row.get('title') or ''} {(row.get('text') or '')[:800]}"
+            info = resolve_article_place(row, extra)
+            key = info.get("place_id") or info.get("country") or "XX"
+            bucket = buckets.setdefault(
+                key,
+                {
+                    **info,
+                    "count": 0,
+                    "articles": [],
+                    "disease_counts": {},
+                    "risk_sum": 0,
+                    "risk_n": 0,
+                    "first_seen": None,
+                    "unlocated": bool(info.get("unlocated")),
+                },
+            )
             bucket["count"] += 1
+            for tag in self.article_diseases(row):
+                counts = bucket["disease_counts"]
+                counts[tag] = counts.get(tag, 0) + 1
+            score = row.get("risk_score")
+            if score is not None:
+                try:
+                    bucket["risk_sum"] += int(score)
+                    bucket["risk_n"] += 1
+                except (TypeError, ValueError):
+                    pass
+            day = str(row.get("published_at") or row.get("collected_at") or "")[:10]
+            if len(day) == 10 and (bucket["first_seen"] is None or day < bucket["first_seen"]):
+                bucket["first_seen"] = day
             if len(bucket["articles"]) < 8:
                 bucket["articles"].append(
                     {
@@ -1710,7 +1957,17 @@ class Store:
                         "risk_score": row.get("risk_score"),
                     }
                 )
-        return sorted(buckets.values(), key=lambda r: -r["count"])
+        out: list[dict[str, Any]] = []
+        for bucket in buckets.values():
+            counts: dict[str, int] = bucket.pop("disease_counts")
+            risk_n = bucket.pop("risk_n")
+            risk_sum = bucket.pop("risk_sum")
+            diseases = sorted(counts, key=lambda d: (-counts[d], d))
+            bucket["diseases"] = diseases
+            bucket["disease"] = diseases[0] if diseases else None
+            bucket["risk_mean"] = round(risk_sum / risk_n) if risk_n else None
+            out.append(bucket)
+        return sorted(out, key=lambda r: -r["count"])
 
     def chart_payload(self, disease: str | None = None, q=None) -> dict[str, Any]:
         from datetime import date, timedelta
@@ -1978,12 +2235,12 @@ class Store:
                 return
             nodes[nid] = {"id": nid, "label": label, "group": group, "value": value, **extra}
 
-        def add_edge(a: str, b: str) -> None:
+        def add_edge(a: str, b: str, label: str = "") -> None:
             key = (a, b) if a < b else (b, a)
             if a == b or key in seen_edges:
                 return
             seen_edges.add(key)
-            edges.append({"from": a, "to": b})
+            edges.append({"from": a, "to": b, "label": label})
 
         if not articles:
             return {"nodes": [], "edges": [], "empty": True, "sample": 0, "universe": 0}
@@ -2019,19 +2276,23 @@ class Store:
             tags = self.article_diseases(row)
             if cid and article_nodes < max(10, min(limit, 80)):
                 add_node(cid, (row.get("title") or cid)[:42], "article", 2)
-                add_edge(cid, f"SRC-{sid}")
+                add_edge(cid, f"SRC-{sid}", "publicó")
                 article_nodes += 1
             blob = f"{row.get('title') or ''} {row.get('text') or ''}".lower()
             for did in tags or []:
                 meta = self.DISEASE_META.get(did, {"short": self.disease_label(did)})
                 add_node(f"DIS-{did}", meta.get("short") or did, "disease", 1, filter={"disease": did})
-                add_edge(f"SRC-{sid}", f"DIS-{did}")
+                add_edge(f"SRC-{sid}", f"DIS-{did}", "habla de")
                 if cid:
-                    add_edge(cid, f"DIS-{did}")
+                    add_edge(cid, f"DIS-{did}", "menciona")
             for nid, label, kws in nar_kws:
                 if any(kw and kw in blob for kw in kws):
                     for did in tags or ["misc"]:
-                        add_edge(f"DIS-{did}" if did != "misc" else f"SRC-{sid}", nid)
+                        add_edge(
+                            f"DIS-{did}" if did != "misc" else f"SRC-{sid}",
+                            nid,
+                            "entra en" if did != "misc" else "alimenta",
+                        )
 
         top_sources = {f"SRC-{s}" for s, _ in sorted(source_hits.items(), key=lambda x: -x[1])[:28]}
         keep = {n for n, meta in nodes.items() if meta["group"] != "source" or n in top_sources}

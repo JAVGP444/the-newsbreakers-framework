@@ -1,0 +1,256 @@
+principle: >
+  Una palabra no es el riesgo. El contexto es el riesgo.
+  El banco marca qué mirar; no declara que una nota sea falsa ni maliciosa.
+  peso ≠ malicia.
+
+categories:
+  ocultamiento:
+    label: Ocultamiento
+    weight: 4
+    terms:
+      - ocultar
+      - ocultamiento
+      - ocultaron
+      - ocultó
+      - encubrir
+      - encubrimiento
+      - esconder
+      - silenciar
+      - censurar
+      - negar
+      - omitir
+      - no informar
+      - no reportar
+      - evitar informar
+      - suprimir información
+      - cover-up
+      - cover up
+  falsedad:
+    label: Falsedad / engaño
+    weight: 4
+    terms:
+      - mentira
+      - falso
+      - falsedad
+      - engaño
+      - engañar
+      - fraude
+      - fraudulento
+      - inventado
+      - fabricado
+      - montaje
+      - falsificado
+      - tergiversar
+      - tergiversación
+      - distorsionar
+      - distorsión
+      - manipulación
+      - manipulado
+      - media verdad
+  contexto:
+    label: Contexto
+    weight: 5
+    terms:
+      - fuera de contexto
+      - sacar de contexto
+      - descontextualizado
+      - información incompleta
+      - información parcial
+      - omisión
+      - omitido
+      - fragmento
+      - recorte
+      - versión
+      - interpretación
+  alarmismo:
+    label: Alarmismo
+    weight: 3
+    terms:
+      - alarma
+      - alarmante
+      - alarmista
+      - peligro
+      - amenaza
+      - emergencia
+      - crisis
+      - desastre
+      - catástrofe
+      - devastador
+      - mortal
+      - letal
+      - extremo
+      - gravísimo
+      - inminente
+      - pánico
+      - miedo
+      - terror
+  acusaciones:
+    label: Acusaciones
+    weight: 4
+    terms:
+      - corrupción
+      - negligencia
+      - incompetencia
+      - complicidad
+      - responsabilidad
+      - culpa
+      - abandono
+      - ocultaron
+      - permitieron
+      - ignoraron
+      - sabían
+      - conocían
+      - decidieron no informar
+  conspiracion:
+    label: Conspiración
+    weight: 4
+    terms:
+      - conspiración
+      - complot
+      - secreto
+      - élites
+      - control
+      - agenda
+      - intereses ocultos
+      - nos ocultan
+      - verdad oculta
+      - información prohibida
+      - medios controlados
+      - gobierno miente
+      - autoridades mienten
+  certeza:
+    label: Certeza sin evidencia
+    weight: 4
+    terms:
+      - definitivamente
+      - confirmado
+      - comprobado
+      - indudable
+      - sin duda
+      - está demostrado
+      - todos saben
+      - claramente
+      - obviamente
+      - sin lugar a dudas
+      - está comprobado
+  autoridades:
+    label: Autoridades
+    weight: 2
+    terms:
+      - gobierno
+      - autoridades
+      - funcionarios
+      - autoridades sanitarias
+      - ministerio
+  reporte:
+    label: Vigilancia y notificación
+    weight: 2
+    terms:
+      - reportar
+      - reporte
+      - notificar
+      - notificación
+      - declarar
+      - declaración
+      - comunicar
+      - comunicado
+      - informar
+      - registro
+      - vigilancia
+      - monitoreo
+      - detección
+      - diagnóstico
+      - confirmación
+      - plazo
+      - obligación
+      - obligatorio
+      - autoridad competente
+  salud_animal:
+    label: Eventos sanitarios
+    weight: 2
+    terms:
+      - brote
+      - caso
+      - casos
+      - contagio
+      - transmisión
+      - infección
+      - mortalidad
+      - animales muertos
+      - animales infectados
+      - sacrificio
+      - cuarentena
+      - aislamiento
+      - emergencia sanitaria
+      - alerta sanitaria
+      - foco
+      - foco sanitario
+      - propagación
+      - expansión
+      - outbreak
+  enfermedad:
+    label: Enfermedades
+    weight: 3
+    terms:
+      - influenza aviar
+      - gripe aviar
+      - peste porcina clásica
+      - fiebre porcina clásica
+      - gusano barrenador
+      - hpai
+      - h5n1
+      - barrenador
+      - cochliomyia
+
+structures:
+  - id: autoridad_ocultamiento_brote
+    label: autoridad + ocultamiento + brote
+    need: [autoridades, ocultamiento, salud_animal]
+  - id: gobierno_mentira_enfermedad
+    label: gobierno + mentira + enfermedad
+    need: [autoridades, falsedad, enfermedad]
+  - id: casos_oficial_fuera_contexto
+    label: casos + información oficial + fuera de contexto
+    need: [salud_animal, reporte, contexto]
+  - id: evento_intencion
+    label: evento real + afirmación de intención
+    need: [salud_animal, acusaciones]
+  - id: brote_amenaza_panico
+    label: brote + amenaza + pánico
+    need: [salud_animal, alarmismo]
+  - id: autoridad_no_reportar_casos
+    label: autoridad + no reportar + casos
+    need: [autoridades, reporte, salud_animal]
+    require_any: [no reportar, no informar, ocult]
+
+narratives:
+  - id: NAR-ocultamiento
+    label: Acusación de ocultamiento
+    description: Relato que atribuye a autoridades la omisión o encubrimiento de un evento sanitario.
+    categories: [ocultamiento, acusaciones]
+  - id: NAR-alarmismo
+    label: Alarmismo sanitario
+    description: Relato que escala un evento a crisis, catástrofe o pánico.
+    categories: [alarmismo]
+  - id: NAR-brote
+    label: Descripción de brote
+    description: Relato centrado en casos, focos o transmisión, sin acusación de intención.
+    categories: [salud_animal, enfermedad]
+    extra_terms: [brote, outbreak, foco, foco sanitario, casos confirmados]
+  - id: NAR-contexto
+    label: Información fuera de contexto
+    description: Datos reales usados de forma incompleta o recortada.
+    categories: [contexto]
+  - id: NAR-intencion
+    label: Intención no demostrada
+    description: De un hecho reportado se deriva una intención (ocultar, mentir) sin evidencia.
+    categories: [certeza, acusaciones, ocultamiento]
+  - id: NAR-vacunas
+    label: Vacunas y control
+    description: Relato que vincula vacunación, erradicación o control sanitario con acusaciones.
+    categories: [conspiracion]
+    extra_terms: [vacuna, vacunación, vaccine, erradicación]
+  - id: NAR-artificial
+    label: Origen artificial
+    description: Relato que atribuye la enfermedad a laboratorio o diseño.
+    extra_terms: [artificial, laboratorio, creada, bioweapon, arma biol]

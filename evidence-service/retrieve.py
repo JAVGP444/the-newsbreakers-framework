@@ -17,7 +17,7 @@ from bootstrap import PROJECT_ROOT, ensure_paths  # noqa: E402
 
 ensure_paths()
 
-from live_pages import live_evidence_cards  # noqa: E402
+from live_pages import live_event_cards, live_evidence_cards  # noqa: E402
 from nli import stance_from_text  # noqa: E402
 from safe_urls import public_http_url  # noqa: E402
 
@@ -35,7 +35,9 @@ def retrieve_evidence(claim: dict[str, Any] | str, limit: int = 5) -> list[dict[
             diseases = matched_diseases(text or "")
         except Exception:
             diseases = []
-    live = live_evidence_cards(diseases, limit=limit)
+    live = live_event_cards(diseases, text or "", limit=limit)
+    if not live:
+        live = live_evidence_cards(diseases, limit=limit)
     if not live:
         try:
             from database.enrich import disease_evidence_cards
@@ -55,12 +57,13 @@ def retrieve_evidence(claim: dict[str, Any] | str, limit: int = 5) -> list[dict[
                 )
         except Exception:
             live = []
-    try:
-        from database.enrich import cap_official_cards
+    if live and not any(c.get("event") for c in live):
+        try:
+            from database.enrich import cap_official_cards
 
-        live = cap_official_cards(live, diseases, limit=min(limit, 4))
-    except Exception:
-        pass
+            live = cap_official_cards(live, diseases, limit=min(limit, 4))
+        except Exception:
+            pass
     out: list[dict[str, Any]] = []
     for item in live[:limit]:
         url = public_http_url(str(item.get("url") or "")) or ""

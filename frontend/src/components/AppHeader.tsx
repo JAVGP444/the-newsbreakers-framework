@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { api } from "../api";
 import { TranslateToggle } from "../translate";
-import LicenseBar from "./LicenseBar";
 import BrandMark from "./BrandMark";
 import VerdictLegend from "./VerdictLegend";
 
@@ -33,12 +32,12 @@ export default function AppHeader({
     let cancelled = false;
     const load = () => {
       api
-        .alerts("pending_review")
+        .kpis()
         .then((r) => {
-          if (!cancelled) setPending(Number(r.pending || r.alerts?.length || 0));
+          if (!cancelled) setPending(Number(r.alerts_pending || 0));
         })
         .catch(() => {
-          if (!cancelled) setPending(0);
+          /* no borrar el recuento anterior */
         });
     };
     load();
@@ -65,7 +64,6 @@ export default function AppHeader({
           {actions}
         </div>
       </div>
-      <LicenseBar />
       <nav className="site-nav" aria-label="Secciones del observatorio">
         {NAV.map((item) => (
           <NavLink

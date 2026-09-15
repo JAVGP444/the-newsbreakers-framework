@@ -2,11 +2,29 @@
 #import <WebKit/WebKit.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
+static int tnb_try_bind(int port) {
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return 0;
+    int reuse = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof reuse);
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof addr);
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons((uint16_t)port);
+    int ok = bind(fd, (struct sockaddr *)&addr, sizeof addr) == 0;
+    close(fd);
+    return ok;
+}
+
 static int tnb_free_port(void) {
+    if (tnb_try_bind(8010)) return 8010;
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) return 8710;
     struct sockaddr_in addr;
@@ -41,7 +59,7 @@ static int tnb_free_port(void) {
 
 - (void)fail:(NSString *)msg {
     NSAlert *a = [[NSAlert alloc] init];
-    a.messageText = @"The NewsBreakers";
+    a.messageText = @"NewsBreakers 2.59.54 a.m.";
     a.informativeText = msg;
     [a runModal];
     [NSApp terminate:nil];
@@ -50,7 +68,7 @@ static int tnb_free_port(void) {
 - (BOOL)installFromDiskImageIfNeeded {
     NSString *bundle = [[NSBundle mainBundle] bundlePath];
     if (![bundle hasPrefix:@"/Volumes/"]) return NO;
-    NSString *dest = [NSHomeDirectory() stringByAppendingPathComponent:@"Desktop/NewsBreakers.app"];
+    NSString *dest = [NSHomeDirectory() stringByAppendingPathComponent:@"Desktop/NewsBreakers 2.59.54 a.m..app"];
     [[NSFileManager defaultManager] createDirectoryAtPath:[NSHomeDirectory() stringByAppendingPathComponent:@"Applications"]
                               withIntermediateDirectories:YES
                                                attributes:nil
@@ -76,9 +94,9 @@ static int tnb_free_port(void) {
     NSMenu *bar = [[NSMenu alloc] init];
     NSMenuItem *appItem = [[NSMenuItem alloc] init];
     [bar addItem:appItem];
-    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"The NewsBreakers"];
-    [appMenu addItemWithTitle:@"Ocultar The NewsBreakers" action:@selector(hide:) keyEquivalent:@"h"];
-    [appMenu addItemWithTitle:@"Salir de The NewsBreakers" action:@selector(terminate:) keyEquivalent:@"q"];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"NewsBreakers"];
+    [appMenu addItemWithTitle:@"Ocultar NewsBreakers" action:@selector(hide:) keyEquivalent:@"h"];
+    [appMenu addItemWithTitle:@"Salir de NewsBreakers" action:@selector(terminate:) keyEquivalent:@"q"];
     appItem.submenu = appMenu;
 
     NSMenuItem *editItem = [[NSMenuItem alloc] init];
@@ -97,7 +115,7 @@ static int tnb_free_port(void) {
                                                          NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
-    self.window.title = @"The NewsBreakers";
+    self.window.title = @"NewsBreakers 2.59.54 a.m.";
     self.window.minSize = NSMakeSize(880, 600);
     self.window.delegate = self;
     self.window.backgroundColor = [NSColor colorWithRed:0.024 green:0.051 blue:0.078 alpha:1];
@@ -133,7 +151,7 @@ static int tnb_free_port(void) {
     [prep waitUntilExit];
     if (prep.terminationStatus != 0) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self fail:@"No pude preparar The NewsBreakers. Revisa ~/Library/Logs/NewsBreakers.log"];
+            [self fail:@"No pude preparar NewsBreakers. Revisa ~/Library/Logs/NewsBreakers.log"];
         });
         return;
     }
@@ -165,7 +183,7 @@ static int tnb_free_port(void) {
     self.api = api;
     [api launch];
 
-    NSString *health = [NSString stringWithFormat:@"http://127.0.0.1:%d/license", self.port];
+    NSString *health = [NSString stringWithFormat:@"http://127.0.0.1:%d/health", self.port];
     BOOL up = NO;
     for (int i = 0; i < 80; i++) {
         if (![api isRunning]) break;
@@ -202,11 +220,19 @@ static int tnb_free_port(void) {
         web.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         web.navigationDelegate = self;
         web.UIDelegate = self;
-        NSString *page = [NSString stringWithFormat:@"http://127.0.0.1:%d/#/", self.port];
-        [web loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:page]]];
         self.web = web;
         [self.window.contentView addSubview:web];
         [self.window makeFirstResponder:web];
+        NSString *page = [NSString stringWithFormat:@"http://127.0.0.1:%d/?boot=%ld/#/", self.port, (long)time(NULL)];
+        NSURLRequest *req = [NSURLRequest requestWithURL:[NSURL URLWithString:page]
+                                             cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+                                         timeoutInterval:30];
+        [[WKWebsiteDataStore defaultDataStore]
+            removeDataOfTypes:[WKWebsiteDataStore allWebsiteDataTypes]
+              modifiedSince:[NSDate dateWithTimeIntervalSince1970:0]
+            completionHandler:^{
+              [web loadRequest:req];
+            }];
     });
 }
 

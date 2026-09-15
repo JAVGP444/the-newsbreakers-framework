@@ -38,7 +38,7 @@ HOST = os.environ.get("GATEWAY_HOST", "127.0.0.1")
 
 def _ours(port: int) -> bool:
     try:
-        with urllib.request.urlopen(f"http://{HOST}:{port}/license", timeout=0.8) as res:
+        with urllib.request.urlopen(f"http://{HOST}:{port}/health", timeout=0.8) as res:
             return res.status == 200
     except (urllib.error.URLError, TimeoutError, OSError):
         return False

@@ -20,7 +20,7 @@ CLUSTERS = (
     {
         "id": "NAR-ocultamiento",
         "label": "ocultamiento",
-        "keywords": ("oculta", "ocultamiento", "niega", "cover-up", "encubre"),
+        "keywords": ("oculta", "ocultamiento", "niega", "cover-up", "encubre", "encubrimiento"),
     },
     {
         "id": "NAR-artificial",
@@ -31,6 +31,11 @@ CLUSTERS = (
         "id": "NAR-brote",
         "label": "brote",
         "keywords": ("brote", "outbreak", "foco", "casos confirmados"),
+    },
+    {
+        "id": "NAR-alarmismo",
+        "label": "alarmismo",
+        "keywords": ("pánico", "catástrofe", "letal", "inminente", "alarmista"),
     },
 )
 

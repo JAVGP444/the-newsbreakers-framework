@@ -193,6 +193,8 @@ def test_order_uses_published_not_collected(tmp_path, monkeypatch):
     titles = [r["title"] for r in rows]
     assert titles[0] == "Septiembre publicado gripe aviar"
     assert titles[1] == "Agosto minado hoy gripe aviar"
+    sep = store.query_articles(parse_article_query(date_from="2026-09-01", date_to="2026-09-30"), limit=None)
+    assert [r["title"] for r in sep] == ["Septiembre publicado gripe aviar"]
     store.close()
 
 

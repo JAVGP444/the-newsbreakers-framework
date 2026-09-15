@@ -5,16 +5,20 @@ import iconRetinaUrl from "leaflet/dist/images/marker-icon-2x.png";
 import iconUrl from "leaflet/dist/images/marker-icon.png";
 import shadowUrl from "leaflet/dist/images/marker-shadow.png";
 import type { GeoRow } from "../api";
+import { mapDiseaseStyle, riskHint } from "../display";
+import { plottablePoints, pointKey } from "../geoCentroids";
 import { articleHref } from "../safeUrl";
-import { plottablePoints } from "../geoCentroids";
 
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({ iconRetinaUrl, iconUrl, shadowUrl });
+
+type MarkerMeta = { circle: L.CircleMarker; stroke: string; weight: number };
 
 type Props = {
   points: GeoRow[];
   height?: number;
   onSelect?: (point: GeoRow) => void;
+  selectedId?: string | null;
   focus?: { lat: number; lng: number; label?: string } | null;
   censor?: boolean;
   compact?: boolean;
@@ -25,23 +29,31 @@ function escapeHtml(s: string) {
 }
 
 function radiusPx(count: number, max: number, compact: boolean) {
-  const cap = compact ? 7 : 8;
-  if (max <= 1) return compact ? 6 : 7;
-  return (compact ? 5 : 5) + Math.sqrt(count / max) * cap;
+  const cap = compact ? 8 : 16;
+  if (max <= 1) return compact ? 6 : 9;
+  return (compact ? 5 : 7) + Math.sqrt(count / max) * cap;
+}
+
+function diseaseOf(p: GeoRow) {
+  return p.disease || p.diseases?.[0] || "";
 }
 
 export default function MapView({
   points,
   height = 480,
   onSelect,
+  selectedId = null,
   focus,
   censor = false,
   compact = false,
 }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const markersRef = useRef<Map<string, MarkerMeta>>(new Map());
   const onSelectRef = useRef(onSelect);
+  const selectedRef = useRef(selectedId);
   onSelectRef.current = onSelect;
+  selectedRef.current = selectedId;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -50,32 +62,45 @@ export default function MapView({
     const rows = plottablePoints(points);
 
     function paint(map: L.Map) {
+      markersRef.current.forEach((m) => m.circle.remove());
+      markersRef.current.clear();
       const max = Math.max(...rows.map((p) => p.count || 1), 1);
       const bounds: L.LatLngExpression[] = [];
       for (const p of rows) {
         if (p.lat == null || p.lng == null) continue;
+        const style = mapDiseaseStyle(diseaseOf(p));
+        const hot = (p.risk_mean || 0) >= 70;
+        const weight = hot ? 2.5 : 1.5;
+        const stroke = hot ? "#f59e0b" : style.stroke;
         const circle = L.circleMarker([p.lat, p.lng], {
           radius: radiusPx(p.count || 1, max, compact),
-          color: "#5eead4",
-          weight: 1.5,
-          fillColor: "#2dd4bf",
-          fillOpacity: 0.7,
+          color: stroke,
+          weight,
+          fillColor: style.fill,
+          fillOpacity: 0.78,
           className: "obs-marker",
         }).addTo(map);
+        const key = pointKey(p);
+        markersRef.current.set(key, { circle, stroke, weight });
         if (censor) {
           circle.bindPopup(
             `<div class="obs-pop"><strong>Censurado</strong><span>Hay cobertura aquí. El país se abre con la clave.</span></div>`
           );
         } else {
+          const disease = mapDiseaseStyle(diseaseOf(p)).label;
+          const risk = p.risk_mean != null ? ` · riesgo ${riskHint(p.risk_mean)}` : "";
+          const grain = p.grain === "place" ? "lugar nombrado en las notas" : "país";
           const arts = (p.articles || [])
-            .slice(0, 4)
+            .slice(0, 3)
             .map(
               (a) =>
                 `<a class="obs-pop-link" href="#${articleHref(a.content_id)}">${escapeHtml(a.title || a.content_id)}</a>`
             )
             .join("");
           circle.bindPopup(
-            `<div class="obs-pop"><strong>${escapeHtml(p.name)}</strong><span>${p.count} documentos. Pulsa para verlos en la sala.</span>${arts}</div>`
+            `<div class="obs-pop"><strong>${escapeHtml(p.name)}</strong><span>${p.count} notas · ${escapeHtml(
+              disease
+            )}${escapeHtml(risk)}. Es un ${grain}, no un foco oficial.</span>${arts}</div>`
           );
           circle.on("click", () => onSelectRef.current?.(p));
         }
@@ -83,17 +108,31 @@ export default function MapView({
       }
       if (focus) {
         L.marker([focus.lat, focus.lng]).addTo(map).bindPopup(focus.label || "Ubicación");
-        map.setView([focus.lat, focus.lng], 4);
+        map.setView([focus.lat, focus.lng], compact ? 4 : 6);
       } else if (bounds.length === 1) {
-        map.setView(bounds[0], compact ? 3 : 4);
+        map.setView(bounds[0], compact ? 3 : 5);
       } else if (bounds.length) {
         map.fitBounds(bounds as L.LatLngBoundsExpression, {
-          padding: compact ? [20, 20] : [28, 28],
-          maxZoom: compact ? 3 : 4,
+          padding: compact ? [20, 20] : [36, 36],
+          maxZoom: compact ? 3 : 6,
           animate: false,
         });
+      } else if (!compact) {
+        map.setView([24, -97], 4);
       }
       map.invalidateSize({ animate: false });
+      applySelection(selectedRef.current);
+    }
+
+    function applySelection(id: string | null | undefined) {
+      markersRef.current.forEach((meta, key) => {
+        const on = Boolean(id && key === id);
+        meta.circle.setStyle({
+          weight: on ? 3.5 : meta.weight,
+          color: on ? "#f8fafc" : meta.stroke,
+        });
+        if (on) meta.circle.openPopup();
+      });
     }
 
     function draw() {
@@ -114,11 +153,11 @@ export default function MapView({
         "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
         {
           attribution: compact ? "" : "Tiles &copy; Esri",
-          maxZoom: 8,
+          maxZoom: compact ? 8 : 12,
           noWrap: true,
         }
       ).addTo(map);
-      map.setView([14, -78], compact ? 2 : 2);
+      map.setView(compact ? [14, -78] : [24, -97], compact ? 2 : 4);
       paint(map);
       mapRef.current = map;
     }
@@ -133,10 +172,23 @@ export default function MapView({
       cancelled = true;
       window.clearTimeout(start);
       ro.disconnect();
+      markersRef.current.clear();
       mapRef.current?.remove();
       mapRef.current = null;
     };
   }, [points, focus, censor, compact]);
+
+  useEffect(() => {
+    const id = selectedId;
+    markersRef.current.forEach((meta, key) => {
+      const on = Boolean(id && key === id);
+      meta.circle.setStyle({
+        weight: on ? 3.5 : meta.weight,
+        color: on ? "#f8fafc" : meta.stroke,
+      });
+      if (on) meta.circle.openPopup();
+    });
+  }, [selectedId]);
 
   return (
     <div className={compact ? "leaflet-frame is-compact" : "leaflet-frame"} style={{ height }}>

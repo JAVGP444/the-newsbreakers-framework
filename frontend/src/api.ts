@@ -53,6 +53,7 @@ export type Claim = {
   nli_label: string | null;
   verifiable: number;
   confidence?: number | null;
+  modality?: string | null;
   nli_explain?: {
     label?: string;
     confidence?: number;
@@ -88,6 +89,16 @@ export type AlertRow = {
   article_verdict?: string | null;
   primary_claim?: string | null;
   evidence_snippet?: string | null;
+  contrast?: {
+    status?: "hit" | "partial" | "peer" | "none" | string;
+    stance?: string | null;
+    snippet?: string | null;
+    url?: string | null;
+    title?: string | null;
+    why?: string | null;
+    facts?: string[];
+    peers?: { title?: string; content_id?: string }[];
+  };
   claims?: Claim[];
   evidence?: EvidenceRow[];
 };
@@ -103,42 +114,16 @@ export type SourceRow = {
   next_check: string | null;
   type?: string | null;
   country?: string | null;
+  language?: string | null;
+  priority?: string | null;
+  frequency_minutes?: number | null;
+  active?: boolean | number;
   healthy?: boolean;
   article_count?: number;
+  evidence_uses?: number;
+  rss_url?: string | null;
+  base_url?: string | null;
   status?: "ok" | "error" | "deferred" | string;
-};
-
-export type LicenseInfo = {
-  ok: boolean;
-  tier: string;
-  features: string[];
-  who?: string | null;
-  exp?: string | null;
-  reason?: string | null;
-  paid?: string[];
-  free?: string[];
-  preview?: boolean;
-  preview_n?: number;
-  caps?: { max_sources?: number | null };
-};
-
-export type DeviceRow = {
-  device_id: string;
-  email: string;
-  name?: string | null;
-  seen_at?: string | null;
-};
-
-export type AccountInfo = {
-  ok: boolean;
-  email?: string;
-  licensed?: boolean;
-  license?: LicenseInfo;
-  devices?: DeviceRow[];
-  device_n?: number;
-  device_max?: number;
-  session?: string;
-  reason?: string;
 };
 
 export type ImageRow = {
@@ -221,6 +206,95 @@ export type Narrative = {
   growth_pct: number | null;
 };
 
+export type KeywordTerm = {
+  term_id: string;
+  term: string;
+  category: string;
+  label?: string | null;
+  weight: number;
+  active: number;
+};
+
+export type NarrativeDossier = {
+  narrative_id: string;
+  label: string;
+  description?: string;
+  volume: number;
+  growth_pct: number;
+  state?: string;
+  state_label?: string;
+  first_seen?: string | null;
+  last_seen?: string | null;
+  country_n?: number;
+  sources_n?: number;
+  claims_n?: number;
+  priority?: { code: string; label: string; why: string };
+  contrast_level?: { level: number; label: string };
+  classification?: { code: string; label: string; why: string; human_priority?: boolean };
+  series?: { day: string; count: number }[];
+  semantic_stages?: { stage: number; from?: string; to?: string; publications: number; concepts: string[] }[];
+  propagation?: { country: string; first_seen?: string | null; publications: number; sources: number; peak?: string | null }[];
+  source_propagation?: { source_id: string; name: string; country?: string; publications: number; first_seen?: string | null; last_seen?: string | null }[];
+  articles?: { content_id: string; title?: string; published_at?: string; country?: string }[];
+  claims?: Claim[];
+  evidence?: (EvidenceRow & { host?: string; official?: boolean })[];
+  contrast?: NarrativeAnalysis["contrast"];
+  origin_note?: string;
+};
+
+export type NarrativeOverview = {
+  principle: string;
+  method: { id: string; title: string; text: string }[];
+  sample: number;
+  cloud: { term: string; count: number }[];
+  categories: { id: string; label: string; count: number }[];
+  pairs: {
+    a: string;
+    b: string;
+    a_label: string;
+    b_label: string;
+    count: number;
+    force: number;
+    relation: string;
+  }[];
+  structures: { label: string; count: number }[];
+  graph: { nodes: GraphNode[]; edges: GraphEdge[]; empty?: boolean };
+  bank: Record<string, { label: string; terms: string[]; weight?: number }>;
+  clusters?: Narrative[];
+  narratives?: NarrativeDossier[];
+  alerts?: { narrative_id: string; label: string; growth_pct: number; reason: string; priority?: { code: string; label: string } }[];
+  kpis?: Record<string, number>;
+  sources?: SourceRow[];
+  sources_available?: number;
+  sources_used?: number;
+};
+
+export type NarrativeAnalysis = {
+  principle: string;
+  signals: {
+    sentence: string;
+    modality: string;
+    modality_label: string;
+    hits: { category: string; term: string; label: string }[];
+    note: string;
+    not_a_verdict: boolean;
+  }[];
+  claims: { text: string; modality: string; parent: string }[];
+  pairs: { a_label: string; b_label: string; force: number; count: number }[];
+  structures: { label: string; sentence: string; note: string }[];
+  contrast?: {
+    afirmacion: string;
+    evidencia_afirmacion: string;
+    evidencia_externa: { title?: string; url?: string; host?: string }[];
+    informacion_oficial: { title?: string; url?: string; host?: string }[];
+    contradicciones: { text?: string; nli?: string }[];
+    no_comprobado: { text?: string; nli?: string }[];
+    normativa?: string | null;
+    conclusion: { code: string; label: string; why: string; human_priority?: boolean };
+  };
+  classification?: { code: string; label: string; why: string; human_priority?: boolean };
+};
+
 export type DiseaseCard = { id: string; label: string; short?: string; menciones: number };
 export type GeoRow = {
   country: string;
@@ -230,6 +304,13 @@ export type GeoRow = {
   lng?: number;
   articles?: { content_id: string; title: string; risk_score?: number | null }[];
   unlocated?: boolean;
+  place_id?: string;
+  grain?: "place" | "country";
+  query?: string | null;
+  disease?: string | null;
+  diseases?: string[];
+  risk_mean?: number | null;
+  first_seen?: string | null;
 };
 export type GraphNode = {
   id: string;
@@ -360,37 +441,9 @@ const _api = import.meta.env.VITE_API_URL as string | undefined;
 export const API = _api === "" ? "" : _api || "http://127.0.0.1:8010";
 const API_TOKEN = import.meta.env.VITE_API_TOKEN || "";
 
-export function deviceId(): string {
-  const key = "tnb_device_id";
-  let id = localStorage.getItem(key) || "";
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(key, id);
-  }
-  return id;
-}
-
-export function deviceName(): string {
-  const plat = (navigator.platform || "").trim() || "equipo";
-  return plat.slice(0, 80);
-}
-
-export function sessionToken(): string {
-  return localStorage.getItem("tnb_session") || "";
-}
-
-export function setSessionToken(token: string | null) {
-  if (token) localStorage.setItem("tnb_session", token);
-  else localStorage.removeItem("tnb_session");
-}
-
 function authHeaders(extra?: HeadersInit): HeadersInit {
   const headers: Record<string, string> = { ...(extra as Record<string, string> | undefined) };
   if (API_TOKEN) headers["X-API-Token"] = String(API_TOKEN);
-  const session = sessionToken();
-  if (session) headers["X-TNB-Session"] = session;
-  headers["X-TNB-Device"] = deviceId();
-  headers["X-TNB-Device-Name"] = deviceName();
   return headers;
 }
 
@@ -413,48 +466,6 @@ async function get<T>(path: string): Promise<T> {
 
 export const api = {
   health: () => get<Record<string, unknown>>("/health"),
-  license: () => get<LicenseInfo>("/license"),
-  me: () => get<AccountInfo>("/auth/me"),
-  login: async (email: string, password: string, key = "") => {
-    const res = await fetch(`${API}/auth/login`, {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ email, password, key, device_id: deviceId(), device_name: deviceName() }),
-    });
-    if (!res.ok) throw new Error(await readError(res, "login"));
-    return res.json() as Promise<AccountInfo>;
-  },
-  register: async (email: string, password: string, key = "") => {
-    const res = await fetch(`${API}/auth/register`, {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ email, password, key, device_id: deviceId(), device_name: deviceName() }),
-    });
-    if (!res.ok) throw new Error(await readError(res, "register"));
-    return res.json() as Promise<AccountInfo>;
-  },
-  logout: async () => {
-    await fetch(`${API}/auth/logout`, { method: "POST", headers: authHeaders() });
-    setSessionToken(null);
-  },
-  revokeDevice: async (id: string) => {
-    const res = await fetch(`${API}/auth/devices/revoke`, {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ device_id: id }),
-    });
-    if (!res.ok) throw new Error(await readError(res, "revoke"));
-    return res.json() as Promise<AccountInfo>;
-  },
-  activateLicense: async (key: string) => {
-    const res = await fetch(`${API}/license`, {
-      method: "POST",
-      headers: authHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ key }),
-    });
-    if (!res.ok) throw new Error(await readError(res, "license"));
-    return res.json() as Promise<LicenseInfo>;
-  },
   status: () => get<Record<string, unknown>>("/status"),
   kpis: () => get<Kpis>("/kpis"),
   stats: (query = "") =>
@@ -493,13 +504,54 @@ export const api = {
       `/articles?page=${page}&page_size=${pageSize}&thumb_page=${page}&thumb_limit=${pageSize}${extra ? `&${extra}` : ""}`
     );
   },
-  claims: () => get<{ claims: Claim[] }>("/claims"),
-  alerts: (status?: string | null) =>
-    get<{ alerts: AlertRow[]; pending: number }>(
-      `/alerts${status ? `?status=${encodeURIComponent(status)}&include=article,claims,evidence` : "?include=article,claims,evidence"}`
-    ),
-  images: (query = "") => get<{ images: ImageRow[] }>(`/images${qs(query)}`),
   narratives: () => get<{ narratives: Narrative[] }>("/narratives"),
+  narrativesOverview: (query = "") => get<NarrativeOverview>(`/narratives/overview${qs(query)}`),
+  narrative: (id: string) => get<NarrativeOverview & { narrative: NarrativeDossier }>(`/narratives/${encodeURIComponent(id)}`),
+  reviewNarrative: async (id: string, human_label: string, reason = "") => {
+    const res = await fetch(`${API}/narratives/${encodeURIComponent(id)}/review`, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ human_label, reason, analyst: "sala" }),
+    });
+    if (!res.ok) throw new Error(await readError(res, "No se pudo guardar la revisión"));
+    return res.json();
+  },
+  claims: (query = "") => get<{ claims: Claim[]; count: number }>(`/claims${qs(query)}`),
+  evidence: () => get<{ evidence: (EvidenceRow & { claim_text?: string; content_id?: string })[]; count: number }>("/evidence"),
+  bankTerms: () => get<{ terms: KeywordTerm[]; principle?: string }>("/banks/terms"),
+  saveTerm: async (row: Partial<KeywordTerm>) => {
+    const path = row.term_id ? `/banks/terms/${encodeURIComponent(row.term_id)}` : "/banks/terms";
+    const res = await fetch(`${API}${path}`, {
+      method: row.term_id ? "PATCH" : "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(row),
+    });
+    if (!res.ok) throw new Error(await readError(res, "No se pudo guardar el término"));
+    return res.json();
+  },
+  deleteTerm: async (id: string) => {
+    const res = await fetch(`${API}/banks/terms/${encodeURIComponent(id)}`, { method: "DELETE", headers: authHeaders() });
+    if (!res.ok) throw new Error(await readError(res, "No se pudo borrar el término"));
+    return res.json();
+  },
+  saveSource: async (row: Partial<SourceRow> & { source_id?: string }, create = false) => {
+    const path = create || !row.source_id ? "/sources" : `/sources/${encodeURIComponent(row.source_id)}`;
+    const res = await fetch(`${API}${path}`, {
+      method: create || !row.source_id ? "POST" : "PATCH",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(row),
+    });
+    if (!res.ok) throw new Error(await readError(res, "No se pudo guardar la fuente"));
+    return res.json();
+  },
+  alerts: (status?: string | null, include = true) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (include) params.set("include", "article,claims,evidence");
+    const q = params.toString();
+    return get<{ alerts: AlertRow[]; pending: number; count: number }>(`/alerts${q ? `?${q}` : ""}`);
+  },
+  images: (query = "") => get<{ images: ImageRow[] }>(`/images${qs(query)}`),
   diseases: () => get<{ diseases: DiseaseCard[] }>("/diseases"),
   geo: (query = "") =>
     get<{ countries: GeoRow[]; points: GeoRow[]; unlocated?: GeoRow[] }>(`/geo${qs(query)}`),
@@ -523,6 +575,7 @@ export const api = {
       similar: { content_id: string; title: string; score: number; reasons: string[] }[];
       graph: { nodes: GraphNode[]; edges: GraphEdge[] };
       quality: Quality;
+      narrative?: NarrativeAnalysis | null;
     };
   },
   cnnMetrics: () => get<CnnMetrics>("/cnn/metrics"),

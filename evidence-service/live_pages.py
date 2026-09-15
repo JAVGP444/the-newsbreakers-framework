@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,10 +23,11 @@ ensure_paths()
 from access import USER_AGENT  # noqa: E402
 from html_fetcher import extract_main_text  # noqa: E402
 
-CACHE_DIR = DATA_DIR / "cache" / "evidence"
+CACHE_DIR = DATA_DIR / "cache" / "evidence_v2"
 TTL_SECONDS = 24 * 3600
 TIMEOUT = 8.0
 GENERIC_PATHS = {"/", "/en", "/es", "/animal-health/en", "/animal-health/en/"}
+MAX_SNIPPET = 8000
 
 # Páginas de enfermedad (no homes). Si 404, se omiten.
 DISEASE_PAGES: dict[str, list[dict[str, str]]] = {
@@ -102,6 +104,65 @@ OFFICIAL_HOSTS = {
     "www.aphis.usda.gov",
     "paho.org",
     "www.paho.org",
+    "tahc.texas.gov",
+    "www.tahc.texas.gov",
+    "canada.ca",
+    "inspection.canada.ca",
+    "copeg.org",
+    "www.copeg.org",
+    "senasa.gob.ar",
+    "www.senasa.gob.ar",
+}
+
+# Boletines y tableros de brote, no la ficha de especie.
+EVENT_PAGES: dict[str, list[dict[str, str]]] = {
+    "gusano_barrenador": [
+        {
+            "url": "https://www.aphis.usda.gov/news/agency-announcements/usda-confirms-presence-new-world-screwworm-united-states",
+            "title": "USDA — confirma NWS en EE.UU.",
+        },
+        {
+            "url": "https://www.aphis.usda.gov/news/agency-announcements/usda-confirms-two-additional-cases-new-world-screwworm-united-states",
+            "title": "USDA — casos adicionales NWS",
+        },
+        {
+            "url": "https://www.aphis.usda.gov/news/agency-announcements/usda-continues-lead-coordinated-response-new-world-screwworm-new-case",
+            "title": "USDA — respuesta NWS / La Salle",
+        },
+        {
+            "url": "https://www.aphis.usda.gov/animals/animal-health/livestock-and-poultry-disease/current-status/us-confirmed-cases-new-world",
+            "title": "USDA — detecciones confirmadas NWS",
+        },
+        {
+            "url": "https://www.gob.mx/senasica/acciones-y-programas/campana-nacional-contra-el-gusano-barrenador-del-ganado",
+            "title": "SENASICA — campaña barrenador",
+        },
+    ],
+    "gripe_aviar": [
+        {
+            "url": "https://www.woah.org/en/disease/avian-influenza/",
+            "title": "WOAH — influenza aviar",
+        },
+        {
+            "url": "https://www.cdc.gov/bird-flu/index.html",
+            "title": "CDC — bird flu",
+        },
+        {
+            "url": "https://www.aphis.usda.gov/livestock-poultry-disease/avian/avian-influenza",
+            "title": "USDA APHIS — avian influenza",
+        },
+    ],
+    "fiebre_porcina_clasica": [
+        {
+            "url": "https://www.woah.org/en/disease/classical-swine-fever/",
+            "title": "WOAH — classical swine fever",
+        },
+    ],
+}
+
+NEWS_FEEDS: dict[str, list[str]] = {
+    "gusano_barrenador": ["https://www.aphis.usda.gov/rss/news.xml"],
+    "gripe_aviar": ["https://www.aphis.usda.gov/rss/news.xml"],
 }
 
 
@@ -178,7 +239,7 @@ def fetch_official_page(url: str, title: str = "") -> dict[str, Any] | None:
                 return None
             response.raise_for_status()
             extracted = extract_main_text(response.text, base_url=str(response.url))
-            snippet = (extracted.get("text") or "")[:1200]
+            snippet = (extracted.get("text") or "")[:MAX_SNIPPET]
             payload = {
                 "url": str(response.url),
                 "requested_url": url,
@@ -240,3 +301,101 @@ def live_evidence_cards(diseases: list[str], limit: int = 4) -> list[dict[str, s
             if len(cards) >= limit:
                 return cards
     return cards
+
+
+def _rss_items(feed_url: str) -> list[dict[str, str]]:
+    cached = _read_cache(feed_url)
+    xml = ""
+    if cached and cached.get("xml"):
+        xml = str(cached.get("xml") or "")
+    elif os.environ.get("TNB_FAST", "0") != "1":
+        try:
+            with httpx.Client(timeout=TIMEOUT, follow_redirects=True, headers={"User-Agent": USER_AGENT}) as client:
+                response = client.get(feed_url)
+                response.raise_for_status()
+                xml = response.text[:200000]
+                _write_cache({"url": feed_url, "ok": True, "xml": xml, "fetched_at": _now(), "snippet": xml[:200]})
+        except Exception:
+            return []
+    items: list[dict[str, str]] = []
+
+    def _strip(raw: str) -> str:
+        text = re.sub(r"<!\[CDATA\[(.*?)\]\]>", r"\1", raw or "", flags=re.S)
+        return re.sub(r"<[^>]+>", " ", text)
+
+    for block in re.findall(r"<item\b[^>]*>(.*?)</item>", xml, flags=re.I | re.S)[:30]:
+        title = re.search(r"<title[^>]*>(.*?)</title>", block, flags=re.I | re.S)
+        link = re.search(r"<link[^>]*>(.*?)</link>", block, flags=re.I | re.S)
+        desc = re.search(r"<description[^>]*>(.*?)</description>", block, flags=re.I | re.S)
+        items.append(
+            {
+                "title": _strip(title.group(1) if title else "").strip(),
+                "url": _strip(link.group(1) if link else "").strip(),
+                "snippet": _strip(desc.group(1) if desc else "").strip()[:900],
+            }
+        )
+    return items
+
+
+def live_event_cards(diseases: list[str], claim_text: str, limit: int = 4) -> list[dict[str, str]]:
+    """Párrafos de boletines que hablan del hecho de la nota, no de la especie."""
+    from database.event_facts import compare_facts, pick_paragraph
+
+    scored: list[tuple[int, dict[str, str]]] = []
+    seen: set[str] = set()
+    claim = claim_text or ""
+    for did in diseases or []:
+        for item in EVENT_PAGES.get(did, []):
+            url = item["url"]
+            if url in seen:
+                continue
+            seen.add(url)
+            page = fetch_official_page(url, title=item.get("title") or "")
+            if not page:
+                continue
+            body = (page.get("snippet") or "").strip()
+            para, score = pick_paragraph(claim, body)
+            snippet = para or body[:500]
+            compared = compare_facts(claim, snippet)
+            if compared["status"] not in {"hit", "partial"} and score < 3:
+                continue
+            scored.append(
+                (
+                    score + (5 if compared["status"] == "hit" else 2 if compared["status"] == "partial" else 0),
+                    {
+                        "url": page.get("url") or url,
+                        "title": page.get("title") or item.get("title") or "",
+                        "snippet": snippet[:900],
+                        "tier": "official",
+                        "live": "1",
+                        "event": "1",
+                    },
+                )
+            )
+        for feed in NEWS_FEEDS.get(did, []):
+            for rss in _rss_items(feed):
+                url = rss.get("url") or ""
+                if not url or url in seen or not is_official_url(url):
+                    continue
+                blob = f"{rss.get('title') or ''} {rss.get('snippet') or ''}"
+                para, score = pick_paragraph(claim, blob)
+                snippet = para or (rss.get("snippet") or rss.get("title") or "")
+                compared = compare_facts(claim, snippet)
+                if compared["status"] not in {"hit", "partial"} and score < 3:
+                    continue
+                seen.add(url)
+                scored.append(
+                    (
+                        score + (5 if compared["status"] == "hit" else 2),
+                        {
+                            "url": url,
+                            "title": rss.get("title") or "",
+                            "snippet": snippet[:900],
+                            "tier": "official",
+                            "live": "1",
+                            "event": "1",
+                        },
+                    )
+                )
+    scored.sort(key=lambda x: -x[0])
+    return [card for _, card in scored[:limit]]

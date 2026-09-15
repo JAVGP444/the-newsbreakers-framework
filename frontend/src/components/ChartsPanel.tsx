@@ -28,7 +28,7 @@ type Props = {
   onPatch: (patch: Partial<ObservatoryFilters>) => void;
 };
 
-function ChartFrame({
+export function ChartFrame({
   title,
   howto,
   caption,

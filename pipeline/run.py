@@ -544,10 +544,29 @@ def process_image_jobs(store: Store, jobs: list[dict[str, Any]]) -> tuple[int, i
 
 def update_narratives(store: Store, cycle_id: str) -> dict[str, Any]:
     prev = {row["narrative_id"]: int(row.get("claim_count") or 0) for row in store.list_narratives()}
-    packed = cluster_claims(store.list_claims(limit=500), previous_counts=prev)
+    packed = cluster_claims(store.list_claims(limit=800), previous_counts=prev)
     for cluster in packed.get("clusters") or []:
         cluster["cycle_id"] = cycle_id
         store.upsert_narrative(cluster)
+    try:
+        from surveillance import characterize
+
+        store.apply_keyword_bank()
+        articles = store.filtered_articles(None, limit=220)
+        claims = store.list_claims(limit=1200)
+        evidence = store.list_evidence()
+        sources = store.list_sources()
+        names = {s.get("source_id"): s.get("name") for s in sources}
+        for art in articles:
+            art["source_name"] = names.get(art.get("source_id")) or art.get("source_id")
+        pack = characterize(articles, claims=claims, evidence=evidence, sources=sources)
+        store.persist_narrative_pack(pack, cycle_id)
+        packed["surveillance"] = {
+            "narratives": len(pack.get("narratives") or []),
+            "alerts": len(pack.get("alerts") or []),
+        }
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [narrativas] caracterización omitida: {exc}")
     return packed
 
 
@@ -558,7 +577,7 @@ def run_cycle(
     persist: bool = True,
     force_due: bool | None = None,
 ) -> dict[str, Any]:
-    from config.license import apply_cap
+    from config.caps import apply_cap
 
     max_sources = apply_cap("mine", max_sources, 8)
     now = _now()
@@ -587,8 +606,8 @@ def run_cycle(
     else:
         due = due_all[:max_sources]
         if len(due_all) > max_sources:
-            tag = "evaluación" if max_sources <= 8 else "tope"
-            print(f"  [{tag}] {max_sources}/{len(due_all)} fuentes (licencia mine = watchlist completa)")
+            tag = "tope"
+            print(f"  [{tag}] {max_sources}/{len(due_all)} fuentes")
     try:
         scrape_cap = max(0, int(os.environ.get("TNB_HTML_LISTING_SOURCES", "10")))
     except ValueError:
@@ -883,11 +902,6 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     parser.add_argument("--cycles", type=int, default=1, help="Ciclos seguidos sin dormir (minar-ya)")
     parser.add_argument("--force-due", action="store_true", help="Ignorar next_check; recorrer toda la watchlist")
     args = parser.parse_args(argv)
-    from config.license import is_licensed
-
-    if not is_licensed():
-        print("Sin licencia no hay minería. Activa TNB1 en la app.")
-        raise SystemExit(2)
     if args.force_due:
         os.environ["TNB_FORCE_DUE"] = "1"
     from database.mine_state import mine_interval_seconds, record_cycle

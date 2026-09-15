@@ -31,17 +31,6 @@ def app_home() -> Path:
     return bundle_root()
 
 
-def seats_db_path() -> Path:
-    env = (os.environ.get("TNB_SEATS_PATH") or "").strip()
-    if env:
-        path = Path(env).expanduser().resolve()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return path
-    path = app_home() / "data" / "accounts.sqlite"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
-
-
 def seed_writable_home() -> Path:
     home = app_home()
     src = bundle_root()

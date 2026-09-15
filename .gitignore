@@ -51,7 +51,7 @@ models/cnn/dataset/**/*.bmp
 models/cnn/dataset/**/*.gif
 !models/cnn/dataset/**/.gitkeep
 
-# Licencias vendidas (archivo local; no subir)
+# Local secrets
 license.key
 data/license.key
 data/accounts.sqlite

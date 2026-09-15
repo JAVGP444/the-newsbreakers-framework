@@ -17,6 +17,17 @@ import LeerMas from "./components/LeerMas";
 const TICK = { fill: "#9fb4c4", fontSize: 12 };
 const TOOL = { background: "#0b1724", border: "1px solid #1e3a4c", color: "#e8f4f8" };
 
+const IMAGE_TYPES: { id: string; label: string; use: string }[] = [
+  { id: "OFFICIAL_DOCUMENT", label: "Documento oficial", use: "Puede ser un acta o comunicado. Aun así hay que contrastar el texto." },
+  { id: "NEWS_SCREENSHOT", label: "Captura de noticia", use: "Es la foto de una nota, no el boletín. Contrasta lo que afirma." },
+  { id: "SOCIAL_MEDIA", label: "Red social", use: "Suele ir recortada. No la tomes como fuente completa." },
+  { id: "MEME", label: "Meme", use: "Humor o montaje. No sirve como prueba." },
+  { id: "INFOGRAPHIC", label: "Infografía", use: "Cifras en la imagen. Verifícalas en una fuente oficial." },
+  { id: "ANIMAL_HEALTH_CONTENT", label: "Foto de animal o enfermedad", use: "Ilustra el tema. No confirma el brote por sí sola." },
+  { id: "PHOTOGRAPH", label: "Fotografía", use: "Foto común. Mira si la misma imagen aparece en otras notas." },
+  { id: "POTENTIALLY_MANIPULATED", label: "Posible manipulación", use: "No te fíes del recuadro. Pásala a revisión humana." },
+];
+
 export default function CnnLab() {
   const [metrics, setMetrics] = useState<CnnMetrics | null>(null);
   const [samples, setSamples] = useState<CnnRealSample[]>([]);
@@ -96,58 +107,55 @@ export default function CnnLab() {
   return (
     <div className="shell observatory">
       <AppHeader
-        title="Laboratorio CNN"
-        subtitle="Modelo productivo = CLIP/ResNet. La CNN de 8 clases es laboratorio académico; no decide si una noticia es verdadera."
+        title="Qué es esta imagen"
+        subtitle="Clasifica el tipo de foto. No dice si la noticia es verdadera."
       />
       {err && <p className="banner err">{err}</p>}
 
-      <section className="viz">
-        <h3>Arquitectura</h3>
-        <div className="arch-row">
-          {(metrics?.architecture || []).map((layer, i) => (
-            <div key={`${layer.layer}-${i}`} className="arch-box">
-              <strong>{layer.layer}</strong>
-              <span>
-                {layer.filters
-                  ? `${layer.filters} filtros ${layer.kernel || ""}`
-                  : layer.units
-                    ? `${layer.units} unidades`
-                    : layer.shape || layer.pool || ""}
-              </span>
-              {layer.activation && <em>{layer.activation}</em>}
-            </div>
-          ))}
-        </div>
-        <p className="muted">
-          Adam · sparse_categorical_crossentropy · accuracy · split 70/15/15 ·{" "}
-          {metrics?.model_version}
-        </p>
-        <LeerMas maxLines={2} className="muted">
-          {`Dataset: ${metrics?.dataset_total ?? 0} imágenes. El reentrenamiento no ocurre en cada ciclo. Modelo productivo = CLIP/ResNet. La CNN de 8 clases es laboratorio académico; no decide si una noticia es verdadera.`}
-        </LeerMas>
-      </section>
-
-      <div className="kpi cnn-acc">
-        <span>Modelo productivo</span>
-        <strong>{metrics?.production_encoder ? "CLIP / ResNet18" : "heurística URL"}</strong>
+      <div className="cnn-guide">
+        <section className="viz">
+          <h3>Para decidir</h3>
+          <p className="cnn-lead">
+            Cuando una nota trae foto, esto responde una sola cosa: qué clase de imagen es. Con eso sabes si
+            puedes usarla como prueba, si es un recorte o si hay que pasarla a revisión.
+          </p>
+          <ul className="cnn-types">
+            {IMAGE_TYPES.map((t) => (
+              <li key={t.id}>
+                <strong>{t.label}</strong>
+                <span>{t.use}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+        <section className="viz cnn-use">
+          <h3>Cómo leer el resultado</h3>
+          <ol className="cnn-rules">
+            <li>
+              El porcentaje es qué tan seguro está del <em>tipo</em> de foto, no un % de que la nota sea verdad.
+            </li>
+            <li>
+              {metrics?.production_encoder
+                ? "Hoy mira los píxeles de la foto."
+                : "Hoy no mira la foto: solo la dirección web. Sube una imagen abajo para probar."}
+            </li>
+            <li>
+              {metrics?.experimental_on_synthetic
+                ? "Hay un ensayo de laboratorio entrenado con dibujos. Ese % no vale para fotos de prensa: no lo uses para validar."
+                : testAcc == null
+                  ? "Si el tipo no cuadra (meme marcado como documento), no valides: corrige o pásala a revisión."
+                  : "Si el tipo no cuadra con lo que ves, no valides: corrige o pásala a revisión."}
+            </li>
+          </ol>
+        </section>
       </div>
-      <div className="kpi cnn-acc">
-        <span>CNN académica {metrics?.experimental_on_synthetic ? "(sintético, no producción)" : "(fotos minadas)"}</span>
-        <strong>
-          {metrics?.experimental_on_synthetic
-            ? "no usar el % como métrica"
-            : testAcc == null
-              ? "—"
-              : `${(Number(testAcc) * 100).toFixed(1)}% val/test`}
-        </strong>
-      </div>
-      {metrics?.experimental_on_synthetic && metrics?.academic_test_accuracy != null ? (
-        <p className="muted">
-          Exactitud en dibujos de laboratorio: {(Number(metrics.academic_test_accuracy) * 100).toFixed(1)}% —
-          no generaliza a fotos de prensa.
-        </p>
-      ) : null}
 
+      <details className="cnn-lab">
+        <summary>Curvas y matriz del ensayo de laboratorio</summary>
+        <p className="muted">
+          Esto no cambia lo que debes hacer con una foto de prensa. Es el entrenamiento interno: si las líneas de
+          validación se separan, el ensayo memoriza dibujos y no sirve para decidir.
+        </p>
       <div className="chart-grid">
         <section className="viz">
           <h3>Exactitud train vs validación</h3>
@@ -252,11 +260,12 @@ export default function CnnLab() {
           <p className="muted">Entrena el modelo para ver la matriz.</p>
         )}
       </section>
+      </details>
 
       <section className="viz">
-        <h3>Probar imagen no vista</h3>
+        <h3>Probar con una foto</h3>
         <p className="muted">
-          El resultado principal es CLIP/ResNet (tipo de imagen). No decide si la noticia es verdadera.
+          Sube una imagen o pulsa una de abajo. El resultado es el tipo de foto, no un veredicto de verdad.
         </p>
         <label className="run file-btn file-btn-lg">
           {busy ? "Clasificando…" : "Subir imagen"}
@@ -295,14 +304,15 @@ export default function CnnLab() {
                 <>
                   {prodAvailable ? (
                     <>
-                      <p className="clip-line">
-                        {prodEncoder || "CLIP/ResNet"} · modelo productivo
-                      </p>
+                      <p className="clip-line">Tipo de imagen propuesto</p>
                       <p>
                         <strong>{prodLabel || pred.class || "—"}</strong>{" "}
                         {prodConf != null ? (
-                          <span className="risk">{(Number(prodConf) * 100).toFixed(1)}%</span>
+                          <span className="risk">{(Number(prodConf) * 100).toFixed(0)}%</span>
                         ) : null}
+                      </p>
+                      <p className="muted">
+                        Ese porcentaje es seguridad sobre el tipo de foto, no sobre si la nota es verdad.
                       </p>
                       <LeerMas maxLines={3} className="muted">
                         {pred.note || ""}
@@ -311,12 +321,12 @@ export default function CnnLab() {
                     </>
                   ) : (
                     <p className="muted">
-                      CLIP/ResNet no está disponible en este equipo. Sube una imagen de noticia; la CNN experimental
+                      CLIP no está disponible en este equipo. Sube una foto de noticia; el ensayo de laboratorio
                       queda abajo y no es el veredicto.
                     </p>
                   )}
                   <details className="cnn-compare">
-                    <summary>Comparar con CNN experimental</summary>
+                    <summary>Comparar con el ensayo de laboratorio</summary>
                     {academic ? (
                       <>
                         <p>
@@ -327,7 +337,7 @@ export default function CnnLab() {
                         </p>
                         <p className="muted">
                           {academic.note ||
-                            "CNN académica de 8 clases (64×64). No es el modelo de producción ni un veredicto de verdad."}
+                            "Ensayo de laboratorio. No lo uses para decidir si la nota es verdad."}
                         </p>
                         <SoftmaxBars scores={academic.scores} />
                       </>

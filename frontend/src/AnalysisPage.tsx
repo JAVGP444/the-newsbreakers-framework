@@ -11,6 +11,7 @@ import {
   type Claim,
   type EvidenceRow,
   type ImageRow,
+  type NarrativeAnalysis,
 } from "./api";
 import AppHeader from "./components/AppHeader";
 import { SoftmaxBars } from "./components/ImageCard";
@@ -150,6 +151,80 @@ function ClaimDetail({ claim, title }: { claim: Claim; title?: string }) {
         </details>
       ) : null}
     </div>
+  );
+}
+
+function ContrastNarrative({ narrative }: { narrative: NarrativeAnalysis }) {
+  const card = narrative.contrast;
+  const cls = narrative.classification || card?.conclusion;
+  return (
+    <section className="viz contrast-block">
+      <h3>Contraste de la narrativa</h3>
+      <p className="muted">{narrative.principle}</p>
+      {cls ? (
+        <p className="ficha-lead">
+          <span className={`pill nar-${cls.code}`}>{cls.label}</span> {cls.why}
+        </p>
+      ) : null}
+      {card ? (
+        <dl className="case-facts contrast-facts">
+          <div>
+            <dt>Afirmación</dt>
+            <dd>{card.afirmacion}</dd>
+          </div>
+          <div>
+            <dt>Evidencia de la nota</dt>
+            <dd>{card.evidencia_afirmacion}</dd>
+          </div>
+          <div>
+            <dt>Información oficial</dt>
+            <dd>
+              {card.informacion_oficial?.length
+                ? card.informacion_oficial.map((o) => o.host || o.title).join(" · ")
+                : "Sin ficha oficial en este cruce."}
+            </dd>
+          </div>
+          {card.normativa ? (
+            <div>
+              <dt>Normativa</dt>
+              <dd>{card.normativa}</dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>No comprobado</dt>
+            <dd>
+              {card.no_comprobado?.length
+                ? card.no_comprobado.map((c) => c.text).filter(Boolean).join(" · ")
+                : "Nada marcado."}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+      {narrative.signals?.length ? (
+        <LeerMas maxItems={4} as="ul" className="signal-list">
+          {narrative.signals.map((s, i) => (
+            <li key={`${s.modality}-${i}`}>
+              <span className="pill mid">{s.modality_label}</span>
+              <span>
+                {s.hits.map((h) => h.term).join(", ")}. {s.note}
+              </span>
+            </li>
+          ))}
+        </LeerMas>
+      ) : (
+        <p className="muted">Sin señales del banco en esta nota.</p>
+      )}
+      {narrative.claims?.length > 1 ? (
+        <div>
+          <h4>Afirmaciones partidas</h4>
+          <ol className="split-claims">
+            {narrative.claims.slice(0, 6).map((c, i) => (
+              <li key={i}>{c.text}</li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -379,6 +454,11 @@ export default function AnalysisPage() {
               <div className="art-pills wrap">
                 <span className={`type-chip kind-${kind}`}>{KIND_LABEL[kind]}</span>
                 <span className={`pill ${verdictClass(article.verdict)}`}>{verdictLabel(article.verdict)}</span>
+                {data.narrative?.classification ? (
+                  <span className={`pill nar-${data.narrative.classification.code}`}>
+                    {data.narrative.classification.label}
+                  </span>
+                ) : null}
                 <span className={`pill risk-pill ${riskTone(article.risk_score)}`}>
                   {article.risk_score == null ? "Riesgo —" : `Riesgo ${article.risk_score}/100`}
                 </span>
@@ -451,6 +531,7 @@ export default function AnalysisPage() {
                 )}
               </div>
             </section>
+            {data.narrative ? <ContrastNarrative narrative={data.narrative} /> : null}
           </div>
 
           {similar.length ? (

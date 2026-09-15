@@ -29,10 +29,16 @@ say_err() {
     exit 1
   fi
 
+  # Una API vieja en otro puerto deja la sala “sin servidor” y bloquea SQLite.
+  pkill -f "desktop/app.py --serve" >/dev/null 2>&1 || true
+  sleep 0.2
+
   rsync -a \
     --exclude '.git/' --exclude '.venv/' --exclude 'node_modules/' \
     --exclude 'frontend/node_modules/' --exclude 'logs/' \
     --exclude 'data/license.key' --exclude '.env' \
+    --exclude 'data/processed/' --exclude 'storage/' \
+    --exclude '__pycache__/' --exclude '.pytest_cache/' \
     "$SRC/" "$SUPPORT/"
   cd "$SUPPORT"
 
@@ -43,8 +49,20 @@ say_err() {
   source .venv/bin/activate
   DEPS=requirements-desktop.txt
   if [ ! -f "$DEPS" ]; then DEPS=requirements.txt; fi
-  python -m pip install -q -U pip
-  python -m pip install -q -r "$DEPS"
+  HASH_FILE=".venv/.tnb-reqs.sha"
+  REQ_HASH="$(shasum -a 256 "$DEPS" | awk '{print $1}')"
+  NEED_PIP=0
+  if [ ! -f "$HASH_FILE" ] || [ "$(cat "$HASH_FILE" 2>/dev/null)" != "$REQ_HASH" ]; then
+    NEED_PIP=1
+  fi
+  if ! python -c "import fastapi, uvicorn" 2>/dev/null; then
+    NEED_PIP=1
+  fi
+  if [ "$NEED_PIP" = 1 ]; then
+    python -m pip install -q -U pip
+    python -m pip install -q -r "$DEPS"
+    echo "$REQ_HASH" >"$HASH_FILE"
+  fi
 
   if [ ! -f frontend/dist/index.html ]; then
     if ! command -v npm >/dev/null; then

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   api,
-  verdictClass,
   type AlertRow,
   type Article,
   type ChartBundle,
@@ -16,10 +15,13 @@ import {
 } from "./api";
 import AppHeader from "./components/AppHeader";
 import ArticleCard from "./components/ArticleCard";
+import BanksPanel from "./components/BanksPanel";
 import ChartsPanel from "./components/ChartsPanel";
-import LeerMas from "./components/LeerMas";
-import MapView from "./components/MapView";
-import NetworkGraph from "./components/NetworkGraph";
+import GraphBoard from "./components/GraphBoard";
+import MapBoard from "./components/MapBoard";
+import NarrativesPanel from "./components/NarrativesPanel";
+import ReviewBoard from "./components/ReviewBoard";
+import SourcesPanel from "./components/SourcesPanel";
 import { MiniBars, Sparkline } from "./components/Sparkline";
 import { articleHref } from "./safeUrl";
 import { ensureGeoPoints } from "./geoCentroids";
@@ -27,7 +29,6 @@ import {
   DISEASE_VISUAL,
   KIND_LABEL,
   cardExcerpt,
-  flowText,
   stanceLabel,
   verdictLabel,
 } from "./display";
@@ -56,11 +57,13 @@ const VERDICTS = [
 type Panel = "sala" | "revision" | "mapa" | "graficas" | "grafo" | "fuentes";
 
 function panelFromPath(pathname: string): Panel {
-  if (pathname.startsWith("/revision")) return "revision";
+  if (pathname.startsWith("/revision") || pathname.startsWith("/alertas") || pathname.startsWith("/afirmaciones") || pathname.startsWith("/evidencia")) {
+    return "revision";
+  }
   if (pathname.startsWith("/mapa")) return "mapa";
   if (pathname.startsWith("/graficas")) return "graficas";
   if (pathname.startsWith("/grafo")) return "grafo";
-  if (pathname.startsWith("/fuentes")) return "fuentes";
+  if (pathname.startsWith("/fuentes") || pathname.startsWith("/bancos")) return "fuentes";
   return "sala";
 }
 
@@ -118,6 +121,7 @@ export default function Observatory() {
   const [articleCount, setArticleCount] = useState(0);
   const [sources, setSources] = useState<SourceRow[]>([]);
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
+  const [alertsReady, setAlertsReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
@@ -130,36 +134,68 @@ export default function Observatory() {
   );
 
   const load = useCallback(async () => {
-    setErr("");
     try {
-      const [st, g, ch, gr, arts, srcs, al, dis] = await Promise.all([
+      const results = await Promise.allSettled([
         api.stats(query),
         api.geo(query),
         api.charts(query),
         api.graph(query),
         api.articles(query, filters.page, PAGE_SIZE),
         api.sources(),
-        api.alerts("pending_review"),
         api.diseases(),
       ]);
-      setKpis(st.kpis);
-      setSparks(st.sparklines || {});
-      setDiseases(dis.diseases?.length ? dis.diseases : st.diseases || []);
-      setMine(st.mine || null);
-      setMysqlOn(Boolean(st.mysql ?? st.kpis?.mysql));
-      setMysqlStale(Boolean(st.mysql_stale ?? st.kpis?.mysql_stale));
-      const rows = arts.articles || [];
-      setArticles(rows);
-      setArticleCount(arts.count ?? rows.length);
-      const points = ensureGeoPoints(g.points?.length ? g.points : (g.countries || []).filter((c) => !c.unlocated), rows);
-      setGeo(points);
-      setUnlocated(g.unlocated || (g.countries || []).filter((c) => c.unlocated));
-      setCharts(ch);
-      setGraph(gr);
-      setSources(srcs.sources || []);
-      setAlerts(al.alerts || []);
+      const ok = <T,>(i: number): T | null =>
+        results[i].status === "fulfilled" ? (results[i].value as T) : null;
+      if (results.every((r) => r.status === "rejected")) {
+        setErr("No se pudo conectar con el servidor. Inténtalo de nuevo en unos segundos.");
+        return;
+      }
+      setErr("");
+      const st = ok<Awaited<ReturnType<typeof api.stats>>>(0);
+      const g = ok<Awaited<ReturnType<typeof api.geo>>>(1);
+      const ch = ok<ChartBundle>(2);
+      const gr = ok<{ nodes: GraphNode[]; edges: GraphEdge[]; sample?: number; universe?: number }>(3);
+      const arts = ok<{ articles: Article[]; count: number }>(4);
+      const srcs = ok<{ sources: SourceRow[] }>(5);
+      const dis = ok<{ diseases: DiseaseCard[] }>(6);
+      if (st) {
+        setKpis(st.kpis);
+        setSparks(st.sparklines || {});
+        setDiseases(dis?.diseases?.length ? dis.diseases : st.diseases || []);
+        setMine(st.mine || null);
+        setMysqlOn(Boolean(st.mysql ?? st.kpis?.mysql));
+        setMysqlStale(Boolean(st.mysql_stale ?? st.kpis?.mysql_stale));
+      } else if (dis?.diseases?.length) {
+        setDiseases(dis.diseases);
+      }
+      if (arts) {
+        const rows = arts.articles || [];
+        setArticles(rows);
+        setArticleCount(arts.count ?? rows.length);
+        if (g) {
+          const points = ensureGeoPoints(
+            g.points?.length ? g.points : (g.countries || []).filter((c) => !c.unlocated),
+            rows
+          );
+          setGeo(points);
+          setUnlocated(g.unlocated || (g.countries || []).filter((c) => c.unlocated));
+        }
+      } else if (g) {
+        setGeo(ensureGeoPoints(g.points?.length ? g.points : (g.countries || []).filter((c) => !c.unlocated), []));
+        setUnlocated(g.unlocated || (g.countries || []).filter((c) => c.unlocated));
+      }
+      if (ch) setCharts(ch);
+      if (gr) setGraph(gr);
+      if (srcs) setSources(srcs.sources || []);
     } catch {
       setErr("No se pudo conectar con el servidor. Inténtalo de nuevo en unos segundos.");
+    }
+    try {
+      const al = await api.alerts("pending_review");
+      setAlerts(al.alerts || []);
+      setAlertsReady(true);
+    } catch {
+      /* conservar la cola que ya se ve */
     }
   }, [query, filters.page]);
 
@@ -236,16 +272,17 @@ export default function Observatory() {
   }
 
   const titles: Record<Panel, { title: string; subtitle: string }> = {
-    sala: { title: "Sala de vigilancia", subtitle: "Por fecha de publicación." },
-    revision: { title: "Revisión humana", subtitle: "Revisa afirmaciones y evidencia, y valida o descarta cada alerta." },
-    mapa: { title: "Mapa de menciones", subtitle: "Pulsa un país para ver sus documentos en la sala." },
-    graficas: { title: "Gráficas", subtitle: "De qué enfermedades se habla, de dónde sale y qué concluyó el análisis." },
-    grafo: { title: "Grafo de narrativas", subtitle: "Pulsa una enfermedad o una fuente para ver sus documentos en la sala." },
-    fuentes: { title: "Fuentes", subtitle: "Método de captura, última visita y estado de cada medio." },
+    sala: { title: "Sala de vigilancia", subtitle: "Documentos y relatos agrupados, por fecha de publicación." },
+    revision: { title: "Revisión", subtitle: "Una nota a la vez: afirmación, evidencia, decisión." },
+    mapa: { title: "Mapa de menciones", subtitle: "Lugares que nombran las notas. Pulsa un punto y ábrelo en la sala." },
+    graficas: { title: "Gráficas", subtitle: "Volumen, veredictos y evolución de los relatos. Una palabra no declara falsedad." },
+    grafo: { title: "Grafo", subtitle: "Puntos unidos por notas en común. Pulsa uno y ábrelo en la sala." },
+    fuentes: { title: "Fuentes", subtitle: "Catálogo, las que sí se usaron en el contraste, y el banco de términos." },
   };
 
   const capture = kpis;
   const bannerClass = mysqlStale || (!mysqlOn && capture?.mysql === false) ? "banner mine-banner warn" : "banner mine-banner";
+  const focus = panel === "revision" || panel === "grafo";
 
   return (
     <div className="shell observatory">
@@ -258,9 +295,10 @@ export default function Observatory() {
           </button>
         }
       />
-      {panel !== "sala" && err && <p className="banner err">{err}</p>}
-      {panel !== "sala" && note && <p className="banner">{note}</p>}
-      {panel !== "sala" ? (
+      {focus && err ? <p className="banner err">{err}</p> : null}
+      {panel !== "sala" && !focus && err && <p className="banner err">{err}</p>}
+      {panel !== "sala" && !focus && note && <p className="banner">{note}</p>}
+      {panel !== "sala" && !focus ? (
       <p className={bannerClass}>
         {mine?.last_mine ? `Última minería: ${formatMineTime(mine.last_mine)}` : "Aún no hay corrida de minería"}
         {" · "}
@@ -278,20 +316,22 @@ export default function Observatory() {
       </p>
       ) : null}
 
-      {panel !== "sala" ? (
+      {panel === "sala" ? (
+        <>
+          {err ? <p className="banner err">{err}</p> : null}
+          {note ? <p className="banner">{note}</p> : null}
+        </>
+      ) : !focus ? (
       <section className="kpis" aria-label="Indicadores">
         <Kpi label="Artículos" value={kpis?.articles ?? "—"} series={sparks.articles} />
         <Kpi label="Afirmaciones" value={kpis?.claims ?? "—"} series={sparks.articles} color="#34d399" bars />
         <Kpi label="Alertas pendientes" value={kpis?.alerts_pending ?? "—"} series={sparks.articles} color="#f87171" accent />
         <Kpi label="Fuentes" value={kpis?.sources ?? "—"} series={sparks.articles} />
       </section>
-      ) : (
-        <>
-          {err ? <p className="banner err">{err}</p> : null}
-          {note ? <p className="banner">{note}</p> : null}
-        </>
-      )}
+      ) : null}
 
+      {!focus ? (
+      <>
       <div className="toolbar">
         <div className="disease-pills" role="group" aria-label="Filtro por enfermedad">
           <button type="button" className={!filters.disease ? "pill-btn on" : "pill-btn"} onClick={() => patchFilters({ disease: null, page: 1 })}>
@@ -381,70 +421,78 @@ export default function Observatory() {
           </button>
         </p>
       ) : null}
+      </>
+      ) : null}
 
       {panel === "sala" && (
-        <ArticleGrid
-          articles={articles}
-          sourceNames={sourceNames}
-          total={articleCount}
-          page={filters.page}
-          pageCount={pageCount}
-          dbEmpty={(kpis?.docs ?? kpis?.articles ?? 0) === 0 && !filters.q && !filters.disease}
-          onPage={(n) => patchFilters({ page: n })}
-          onClear={() => setParams(new URLSearchParams(), { replace: true })}
+        <>
+          <ArticleGrid
+            articles={articles}
+            sourceNames={sourceNames}
+            total={articleCount}
+            page={filters.page}
+            pageCount={pageCount}
+            dbEmpty={(kpis?.docs ?? kpis?.articles ?? 0) === 0 && !filters.q && !filters.disease}
+            onPage={(n) => patchFilters({ page: n })}
+            onClear={() => setParams(new URLSearchParams(), { replace: true })}
+          />
+          <NarrativesPanel query={query} surface="sala" />
+        </>
+      )}
+
+      {panel === "revision" && (
+        <ReviewBoard
+          alerts={alerts}
+          pendingHint={Number(kpis?.alerts_pending || 0)}
+          loading={!alertsReady}
+          onDone={load}
         />
       )}
 
-      {panel === "revision" && <HitlQueue alerts={alerts} onDone={load} />}
-
       {panel === "mapa" && (
         <section className="map-wall">
-          <MapView
+          <MapBoard
             points={geo}
-            height={480}
-            onSelect={(p) => {
-              navigate({ pathname: "/", search: filtersToSearch({ ...filters, country: p.country, page: 1 }) });
+            unlocated={unlocated}
+            onOpenSala={(p) => {
+              const placeQuery = p.grain === "place" ? p.query || p.name : null;
+              navigate({
+                pathname: "/",
+                search: filtersToSearch({
+                  ...filters,
+                  country: p.country && !["XX", "INT"].includes(p.country) ? p.country : filters.country,
+                  q: placeQuery || filters.q,
+                  page: 1,
+                }),
+              });
             }}
           />
-          <LeerMas maxItems={12} className="geo-dock">
-            {geo.map((g) => (
-              <button
-                type="button"
-                key={g.country}
-                className="geo-row"
-                onClick={() => navigate({ pathname: "/", search: filtersToSearch({ ...filters, country: g.country, page: 1 }) })}
-              >
-                <strong>{g.name}</strong>
-                <span>{g.count}</span>
-              </button>
-            ))}
-          </LeerMas>
-          {unlocated.length ? (
-            <LeerMas maxLines={2} className="muted unlocated-line">
-              {`Sin ubicar (${unlocated.reduce((n, r) => n + (r.count || 0), 0)}): ${unlocated.map((u) => `${u.name} ${u.count}`).join(" · ")}`}
-            </LeerMas>
-          ) : null}
         </section>
       )}
 
-      {panel === "graficas" && <ChartsPanel data={charts} filters={filters} onPatch={patchFilters} />}
+      {panel === "graficas" && (
+        <>
+          <ChartsPanel data={charts} filters={filters} onPatch={patchFilters} />
+          <NarrativesPanel query={query} surface="graficas" />
+        </>
+      )}
 
       {panel === "grafo" && (
-        <section className="canvas single">
-          {graph.nodes.length ? (
-            <NetworkGraph nodes={graph.nodes} edges={graph.edges} onNode={onGraphNode} />
-          ) : (
-            <p className="muted">No hay co-ocurrencias con este filtro.</p>
-          )}
-          <p className="muted legend-line">
-            <i className="swatch source" /> fuente <i className="swatch disease" /> enfermedad{" "}
-            <i className="swatch narrative" /> narrativa
-            {graph.sample != null ? ` · ${graph.sample} de ${graph.universe ?? "?"} artículos` : ""}
-          </p>
-        </section>
+        <GraphBoard
+          nodes={graph.nodes}
+          edges={graph.edges}
+          sample={graph.sample}
+          universe={graph.universe}
+          onNode={onGraphNode}
+        />
       )}
 
-      {panel === "fuentes" && <SourcesPanel sources={sources} filters={filters} />}
+      {panel === "fuentes" && (
+        <>
+          <SourcesPanel sources={sources} filters={filters} onSaved={load} />
+          <BanksPanel />
+        </>
+      )}
     </div>
   );
 }
@@ -515,155 +563,7 @@ function ArticleGrid({
   );
 }
 
-function SourcesPanel({ sources, filters }: { sources: SourceRow[]; filters: ObservatoryFilters }) {
-  const [open, setOpen] = useState(false);
-  if (!sources.length) return <p className="muted">Todavía no hay fuentes en el catálogo.</p>;
-  const preview = 12;
-  const extra = sources.length > preview;
-  const rows = open || !extra ? sources : sources.slice(0, preview);
-  return (
-    <section className="source-table-wrap">
-      <table className="source-table">
-        <thead>
-          <tr>
-            <th>Fuente</th>
-            <th>Método</th>
-            <th>Última captura</th>
-            <th>Fallos</th>
-            <th>Artículos</th>
-            <th>Estado</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((s) => {
-            const status = s.status || (s.last_error ? "error" : "ok");
-            const label = status === "deferred" ? "Diferida" : status === "error" ? s.last_error || "Error" : "Operativa";
-            return (
-              <tr key={s.source_id}>
-                <td>
-                  <Link to={{ pathname: "/", search: filtersToSearch({ ...filters, source: s.source_id, page: 1 }) }}>
-                    {s.name || s.source_id}
-                  </Link>
-                  <div className="muted">{s.domain}</div>
-                </td>
-                <td>{s.access_method || s.type || "—"}</td>
-                <td>{s.last_checked ? formatMineTime(s.last_checked) : "Nunca"}</td>
-                <td>{s.consecutive_failures || 0}</td>
-                <td>{s.article_count ?? 0}</td>
-                <td className={`source-health ${status}`}>{label}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      {extra ? (
-        <button type="button" className="leer-mas-btn" onClick={() => setOpen((v) => !v)}>
-          {open ? "Leer menos" : "Leer más"}
-        </button>
-      ) : null}
-    </section>
-  );
-}
-
-function HitlQueue({ alerts, onDone }: { alerts: AlertRow[]; onDone: () => Promise<void> }) {
-  const [busyId, setBusyId] = useState("");
-  const [note, setNote] = useState("");
-  const [editId, setEditId] = useState("");
-  const [reason, setReason] = useState("");
-
-  async function act(id: string, label: string, why = "") {
-    if (label === "modificado" && !why.trim()) {
-      setEditId(id);
-      return;
-    }
-    setBusyId(id);
-    setNote("");
-    try {
-      await api.review(id, label, why);
-      setNote(`Revisión guardada: ${label}`);
-      setEditId("");
-      setReason("");
-      await onDone();
-    } catch (e) {
-      setNote(e instanceof Error ? e.message : "No se pudo guardar la revisión. Inténtalo de nuevo.");
-    } finally {
-      setBusyId("");
-    }
-  }
-
-  if (!alerts.length) return <p className="muted">No hay alertas pendientes de revisión.</p>;
-  return (
-    <section className="hitl-list">
-      {note ? <p className="banner">{note}</p> : null}
-      <p className="muted list-count">{alerts.length} en cola</p>
-      <LeerMas maxItems={6}>
-        {alerts.map((a) => (
-          <article key={a.alert_id} className="hitl-card hitl-rich">
-            <div>
-              <Link to={articleHref(a.content_id)}>{a.title || a.content_id}</Link>
-              <p className="art-meta">
-                <span className={`pill ${verdictClass(a.verdict)}`}>{a.verdict}</span>
-                <span>riesgo {a.risk_score}</span>
-                <span>{a.created_at?.slice(0, 16) || ""}</span>
-              </p>
-              {a.primary_claim ? (
-                <div className="hitl-claim">
-                  <strong>Afirmación: </strong>
-                  <LeerMas maxLines={3}>{flowText(a.primary_claim)}</LeerMas>
-                </div>
-              ) : (
-                <p className="muted">Sin afirmación extraída.</p>
-              )}
-              {a.evidence_snippet ? (
-                <div className="hitl-ev">
-                  <strong>Evidencia: </strong>
-                  <LeerMas maxLines={3}>{flowText(a.evidence_snippet)}</LeerMas>
-                </div>
-              ) : (
-                <p className="muted">Sin evidencia oficial disponible.</p>
-              )}
-              {a.human_reason ? (
-                <p className="muted">Nota del analista: {a.human_reason}</p>
-              ) : null}
-              {editId === a.alert_id ? (
-                <label className="hitl-reason">
-                  Motivo (obligatorio)
-                  <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} />
-                  <button type="button" className="run" disabled={!reason.trim() || busyId === a.alert_id} onClick={() => act(a.alert_id, "modificado", reason)}>
-                    Guardar modificación
-                  </button>
-                </label>
-              ) : null}
-            </div>
-            <HitlButtons busy={busyId === a.alert_id} onAct={(label) => act(a.alert_id, label)} />
-          </article>
-        ))}
-      </LeerMas>
-    </section>
-  );
-}
-
-export function HitlButtons({
-  busy,
-  onAct,
-}: {
-  busy?: boolean;
-  onAct: (label: "validado" | "descartado" | "modificado") => void;
-}) {
-  return (
-    <div className="hitl-actions">
-      <button type="button" className="run" disabled={busy} onClick={() => onAct("validado")}>
-        Validar
-      </button>
-      <button type="button" className="hitl-discard" disabled={busy} onClick={() => onAct("descartado")}>
-        Descartar
-      </button>
-      <button type="button" className="hitl-edit" disabled={busy} onClick={() => onAct("modificado")}>
-        Modificar
-      </button>
-    </div>
-  );
-}
+export { HitlButtons } from "./components/HitlButtons";
 
 function Kpi({
   label,
